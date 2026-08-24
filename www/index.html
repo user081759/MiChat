@@ -1,0 +1,3013 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat en vivo</title>
+
+    <!-- Firebase compat scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+
+    <style>
+        :root {
+            --fondo: #121212;
+            --superficie: #1a1a23;
+            --texto: #e8e8f0;
+            --texto-suave: #a0a0b8;
+            --acento: #7c5cff;
+            --borde: #2a2a3a;
+            --radio: 12px;
+            --fuente: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--fuente);
+            background: var(--fondo);
+            color: var(--texto);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+        }
+
+        .nombre-usuario {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            color: var(--texto);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            z-index: 2500;
+            display: none;
+            white-space: nowrap;
+            text-transform: uppercase;
+        }
+
+        .nombre-usuario.mostrar {
+            display: block;
+        }
+
+        .menu-lateral {
+            position: fixed;
+            top: 0;
+            left: -260px;
+            width: 250px;
+            height: 100%;
+            background: var(--superficie);
+            border-right: 1px solid var(--borde);
+            padding: 20px;
+            transition: left 0.3s;
+            z-index: 2000;
+            overflow-y: auto;
+        }
+
+        .menu-lateral.abierto {
+            left: 0;
+        }
+
+        .menu-lateral h3 {
+            color: var(--acento);
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .lista-usuarios {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .usuario-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(124, 92, 255, 0.1);
+            border: 1px solid var(--borde);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.9rem;
+        }
+
+        .usuario-item.seleccionado {
+            border-color: var(--acento);
+            background: rgba(124, 92, 255, 0.25);
+        }
+
+        .btn-seleccionar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid var(--acento);
+            background: transparent;
+            color: var(--acento);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        .btn-seleccionar.seleccionado {
+            background: var(--acento);
+            color: #fff;
+        }
+
+        .btn-seleccionar::after {
+            content: "✓";
+            display: none;
+        }
+
+        .btn-seleccionar.seleccionado::after {
+            display: block;
+        }
+
+        .btn-cerrar-menu {
+            background: none;
+            border: none;
+            color: var(--texto-suave);
+            font-size: 1.5rem;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        .overlay-menu {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 1500;
+        }
+
+        .overlay-menu.activo {
+            display: block;
+        }
+
+        .btn-menu {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            color: var(--texto);
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 2500;
+        }
+        .btn-menu.oculto {
+            display: none !important;
+        }
+
+        .btn-ver-privados {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            width: 100%;
+            background: transparent;
+            border: 1px solid var(--borde);
+            color: var(--texto);
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            position: relative;
+        }
+
+        .btn-ver-privados:hover {
+            background: rgba(124, 92, 255, 0.1);
+            border-color: var(--acento);
+        }
+
+        .badge-privados {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            background: var(--acento);
+            color: #fff;
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: bold;
+            padding: 0 4px;
+        }
+
+        .contenedor-chat {
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            border-radius: 0;
+            padding: 20px;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            margin: 0;
+        }
+
+        h1, h2, h3 {
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: var(--acento);
+        }
+
+        .area-mensajes {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--borde);
+            border-radius: var(--radio);
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .mensaje {
+            margin-bottom: 6px;
+            background: rgba(124, 92, 255, 0.1);
+            border-left: 3px solid var(--acento);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .mensaje-contenido {
+            display: block;
+            width: 100%;
+        }
+
+        .mensaje-cabecera {
+            display: block;
+            width: 100%;
+            margin-bottom: 4px;
+        }
+
+        .admin-etiqueta {
+            display: block;
+            color: #00c853;
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-bottom: 2px;
+        }
+
+        .texto-admin {
+            color: inherit;
+        }
+
+        .btn-descargar-mensaje {
+            background: none;
+            border: none;
+            color: #4da6ff;
+            cursor: pointer;
+            font-size: 0.8rem;
+            align-self: flex-end;
+            margin-top: 3px;
+            text-decoration: none;
+        }
+
+        .btn-descargar-mensaje:hover {
+            text-decoration: underline;
+        }
+
+        .audio-mensaje-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            width: min(100%, 420px);
+            margin-top: 6px;
+        }
+        .audio-mensaje {
+            display: block;
+            width: 100%;
+        }
+        .audio-duracion {
+            font-size: 12px;
+            opacity: .85;
+            margin-left: 4px;
+        }
+        .audio-reproductor {
+            display:flex;
+            align-items:center;
+            gap:8px;
+            width:min(100%,420px);
+            margin-top:6px;
+            background: #f5f5f5;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            padding: 6px 10px 6px 6px;
+            min-height: 42px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.15);
+        }
+        .audio-reproductor audio { display:none; }
+        .audio-play {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            border-radius: 50%;
+            border: none;
+            background: #ffffff;
+            color: #222;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            font-size: 0;
+            padding: 0;
+            box-shadow: 0 1px 2px rgba(0,0,0,.2);
+        }
+        .audio-play-icon {
+            display: block;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 7px 0 7px 12px;
+            border-color: transparent transparent transparent #222;
+            margin-left: 3px;
+        }
+        .audio-reproductor.reproduciendo .audio-play-icon {
+            width: 10px;
+            height: 12px;
+            border: none;
+            background: linear-gradient(to right, #222 0 3px, transparent 3px 7px, #222 7px 10px);
+            margin-left: 0;
+        }
+        .audio-tiempos { color: #555 !important; }
+        .audio-progreso {
+            background: #c8c8c8 !important;
+        }
+        .audio-progreso::-webkit-slider-thumb {
+            background: #555 !important;
+        }
+        .audio-progreso::-moz-range-thumb {
+            background: #555 !important;
+        }
+        .audio-carga {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0,0,0,.2);
+            border-top-color: #222;
+            border-radius: 50%;
+            animation: audio-spin .7s linear infinite;
+        }
+        .audio-reproductor.cargando .audio-play-icon { display: none; }
+        .audio-reproductor.cargando .audio-carga { display: block; }
+        .audio-reproductor.cargando .audio-play { pointer-events: none; }
+        @keyframes audio-spin { to { transform: rotate(360deg); } }
+        .audio-cuerpo {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .audio-progreso {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #5c5c5c;
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+        }
+        .audio-progreso::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e8e8e8;
+            border: 0;
+            cursor: pointer;
+        }
+        .audio-progreso::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e8e8e8;
+            border: 0;
+            cursor: pointer;
+        }
+        .audio-tiempos {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #bdbdbd;
+            font-variant-numeric: tabular-nums;
+        }
+        .audio-duracion-fija { display:none; }
+        @keyframes parpadeo-colores {
+            0% { color:#ff1744; }
+            16% { color:#ff9100; }
+            33% { color:#ffea00; }
+            50% { color:#00e676; }
+            66% { color:#00b0ff; }
+            83% { color:#d500f9; }
+            100% { color:#ff1744; }
+        }
+        .texto-parpadeo {
+            animation: parpadeo-colores 0.28s linear infinite;
+        }
+        .aviso-sin-conexion {
+            display: none;
+            margin: 8px 0;
+            color: #ff8a80;
+            font-size: 0.9rem;
+        }
+        .mensaje-enviando {
+            opacity: .75;
+            font-style: italic;
+            color: var(--texto-suave);
+        }
+        .perfil-stats {
+            display: flex;
+            justify-content: center;
+            gap: 18px;
+            margin: 14px 0 8px;
+        }
+        .perfil-stat {
+            background: none;
+            border: 0;
+            color: var(--texto);
+            cursor: pointer;
+            text-align: center;
+        }
+        .perfil-stat strong { display:block; font-size:1.05rem; color:#fff; }
+        .perfil-stat span { font-size:.78rem; color:var(--texto-suave); }
+        .lista-seguimiento {
+            max-height: 220px;
+            overflow-y: auto;
+            text-align: left;
+            margin-top: 10px;
+            display: none;
+        }
+        .lista-seguimiento.mostrar { display:block; }
+        .item-seguimiento {
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--borde);
+            font-size: .9rem;
+        }
+
+        .mensaje-texto {
+            flex: 1;
+            white-space: normal;
+        }
+
+        .texto-mensaje {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .mensaje-imagen {
+            display: block;
+            width: auto;
+            max-width: 100%;
+            max-height: 520px;
+            height: auto;
+            border-radius: 8px;
+            margin-top: 8px;
+            object-fit: contain;
+        }
+
+        .mensaje-imagen-contenedor {
+            width: 100%;
+            margin-top: 2px;
+        }
+
+        .mensaje strong {
+            color: var(--acento);
+        }
+
+        .mensaje .fecha {
+            font-size: 0.7rem;
+            color: var(--texto-suave);
+            margin-left: 8px;
+            opacity: 0.7;
+        }
+
+        .btn-eliminar-mensaje {
+            background: none;
+            border: none;
+            color: #f44336;
+            cursor: pointer;
+            font-size: 0.8rem;
+            align-self: flex-end;
+            margin-top: 3px;
+        }
+
+        .btn-eliminar-mensaje:hover {
+            text-decoration: underline;
+        }
+
+        .indicador-estado {
+            font-size: 0.8rem;
+            margin-left: 5px;
+            color: var(--texto-suave);
+        }
+
+        .indicador-estado.leido {
+            color: #4da6ff;
+        }
+
+        .mensaje-eliminado {
+            color: #000;
+            font-weight: bold;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .mensaje-eliminado::before {
+            content: "❌";
+            color: #f44336;
+        }
+
+        .mensaje-cita {
+            background: #ffffff;
+            color: #111111;
+            border: 1px solid #ffffff;
+            border-left: 3px solid #ffffff;
+            padding: 5px 8px;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+
+        .mensaje-cita .autor-cita {
+            font-weight: bold;
+            color: var(--acento);
+        }
+        .mensaje-cita .texto-cita {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .banner-respuesta {
+            background: rgba(124, 92, 255, 0.2);
+            border: 1px solid var(--acento);
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .banner-respuesta span {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-cancelar-respuesta {
+            background: none;
+            border: none;
+            color: #f44336;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-responder-mensaje {
+            background: none;
+            border: none;
+            color: var(--acento);
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-top: 3px;
+            align-self: flex-end;
+        }
+
+        .btn-responder-mensaje:hover {
+            text-decoration: underline;
+        }
+
+        .formulario-chat {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .fila-input {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .fila-input input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            background: var(--fondo);
+            border: 1px solid var(--borde);
+            border-radius: 20px;
+            color: var(--texto);
+            font-size: 1rem;
+            font-family: var(--fuente);
+            width: 100%;
+        }
+
+        .fila-input input[type="text"]:focus {
+            outline: none;
+            border-color: var(--acento);
+        }
+
+        .btn-enviar {
+            background: var(--acento);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-enviar:hover {
+            background: #9d7bff;
+        }
+
+        .btn-imagen {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.5rem;
+            padding: 0 5px;
+        }
+
+        /* Clase para ocultar inputs sin display:none */
+        .input-oculto {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 0;
+            height: 0;
+            opacity: 0;
+        }
+
+        /* Selector de imagen */
+        .modal-selector-imagen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            z-index: 4000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-selector-imagen.mostrar {
+            display: flex;
+        }
+
+        .selector-contenido {
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            border-radius: var(--radio);
+            padding: 20px;
+            width: 90%;
+            max-width: 300px;
+            text-align: center;
+        }
+
+        .selector-opciones {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .opcion-imagen {
+            background: none;
+            border: 1px solid var(--borde);
+            color: var(--texto);
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .opcion-imagen:hover {
+            background: rgba(124, 92, 255, 0.1);
+            border-color: var(--acento);
+        }
+
+        .btn-cerrar-selector {
+            background: none;
+            border: none;
+            color: var(--texto-suave);
+            font-size: 1.5rem;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        .modal-privados {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            z-index: 3000;
+        }
+
+        .modal-privados.mostrar {
+            display: flex;
+        }
+
+        .modal-privados-contenido {
+            background: var(--superficie);
+            border: none;
+            border-radius: 0;
+            padding: 20px;
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .modal-privados h3 {
+            color: var(--acento);
+        }
+
+        .area-privados {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--borde);
+            border-radius: var(--radio);
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .mensaje-privado {
+            margin-bottom: 8px;
+            background: rgba(255, 215, 0, 0.1);
+            border-left: 3px solid #ffc107;
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .mensaje-privado .fecha {
+            font-size: 0.65rem;
+            opacity: 0.5;
+            margin-left: 5px;
+        }
+
+        .mensaje-privado strong {
+            color: var(--acento);
+        }
+
+        .mensaje-privado .admin-etiqueta {
+            margin-bottom: 2px;
+        }
+
+        .btn-cerrar-privados {
+            background: none;
+            border: none;
+            color: var(--texto-suave);
+            font-size: 1.5rem;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        .modal-nombre {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+        }
+
+        .modal-nombre-contenido {
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            border-radius: var(--radio);
+            padding: 25px;
+            width: 90%;
+            max-width: 350px;
+            text-align: center;
+        }
+
+        .modal-nombre-contenido input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            background: var(--fondo);
+            border: 1px solid var(--borde);
+            border-radius: 20px;
+            color: var(--texto);
+            font-size: 1rem;
+        }
+
+        .modal-nombre-contenido input:focus {
+            outline: none;
+            border-color: var(--acento);
+        }
+
+        .modal-nombre-contenido .btn-enviar {
+            margin-top: 10px;
+        }
+
+        .link-nueva-cuenta {
+            display: block;
+            margin-top: 10px;
+            color: var(--acento);
+            cursor: pointer;
+            text-decoration: underline;
+            font-size: 0.85rem;
+        }
+
+        .checkbox-mostrar-password {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--texto-suave);
+            font-size: 0.85rem;
+            margin: 10px 0;
+        }
+
+        .checkbox-mostrar-password input {
+            width: auto;
+            margin: 0;
+        }
+
+        .texto-mensaje a, .texto-cita a {
+            color: #4da6ff;
+            text-decoration: underline;
+            word-break: break-all;
+        }
+    
+.btn-ver-perfil{background:none;border:0;color:#fff;cursor:pointer;padding:2px 4px;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;}
+.cabecera-identidad{display:flex;align-items:center;gap:6px;}
+.cabecera-identidad>span{display:flex;flex-direction:column;align-items:flex-start;line-height:1.05;}
+.admin-etiqueta{display:block;text-align:left;}
+#select-nombre{width:100%;padding:10px;border-radius:6px;background:var(--superficie);color:var(--texto);border:1px solid var(--borde);margin-bottom:8px;}
+</style>
+<style>
+.foto-perfil-mensaje{width:36px;height:36px;min-width:36px;border-radius:50%;object-fit:cover;cursor:pointer;vertical-align:middle;margin-right:7px;}
+.cabecera-identidad{display:inline-flex;align-items:center;gap:0;}
+.admin-etiqueta{display:block;text-align:center;line-height:1.05;}
+.modal-foto-perfil{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:5000;}
+.modal-foto-perfil.mostrar{display:flex;}
+.modal-foto-perfil img{width:min(78vw,360px);height:min(78vw,360px);max-width:360px;max-height:360px;border-radius:50%;object-fit:cover;box-shadow:0 0 30px rgba(0,0,0,.6);}
+.modal-foto-perfil .cerrar-foto{position:absolute;top:18px;right:18px;width:38px;height:38px;border-radius:50%;border:1px solid #fff;background:rgba(0,0,0,.45);color:#fff;font-size:25px;cursor:pointer;}
+.badge-menu{position:absolute;top:-6px;right:-6px;left:auto;transform:none;background:#8e44ad!important;color:#fff!important;border-radius:50%;min-width:18px;height:18px;padding:0 4px;display:none;align-items:center;justify-content:center;font-size:11px;line-height:18px;font-weight:bold;z-index:2;}
+.badge-usuario{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;background:#8e44ad;color:#fff;border-radius:50%;font-size:11px;font-weight:bold;line-height:18px;}
+.estado-online{color:#4da6ff;font-weight:bold;font-size:.78rem;margin-left:6px;}
+.btn-responder-mensaje{color:#fff!important;}
+
+/* Ajustes solicitados: creación de cuenta y menú */
+#bloque-mostrar-password {
+    order: 0 !important;
+}
+#select-nombre { order: 0; }
+#input-nombre { order: 0; }
+#repetir-password { width:100%; }
+#perfil-menu-superior { display:flex !important; justify-content:center; align-items:center; }
+#foto-menu-usuario { width:36px !important; height:36px !important; min-width:36px !important; border-radius:50%; overflow:hidden; cursor:pointer; }
+
+.btn-ver-perfil::before,.btn-ver-perfil::after{display:none!important;content:none!important;}
+.estado-mensaje-privado{margin-top:2px;}
+
+.btn-like-mensaje{background:none;border:none;cursor:pointer;font-size:1.1rem;align-self:flex-end;margin-top:4px;color:#fff;opacity:.9;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:12px;}
+.btn-like-mensaje:hover{opacity:1;background:rgba(255,255,255,.08)}
+.btn-like-mensaje.liked{color:#fff}
+.btn-like-mensaje .like-count{font-size:.78rem;color:var(--texto-suave);font-weight:600}
+.lista-reportes{max-height:180px;overflow-y:auto;margin-top:12px;border-top:1px solid var(--borde);padding-top:10px;display:none}
+.lista-reportes.mostrar{display:block}
+.item-reporte{background:rgba(244,67,54,.08);border:1px solid rgba(244,67,54,.35);border-radius:6px;padding:8px 36px 8px 8px;margin-bottom:8px;font-size:.85rem;text-align:left;position:relative}
+.item-reporte .rep-meta{color:var(--texto-suave);font-size:.75rem;margin-bottom:4px}
+.btn-ok-reporte{position:absolute;top:6px;right:6px;background:none;border:1px solid #e53935;color:#e53935;border-radius:4px;font-size:.72rem;padding:2px 6px;cursor:pointer;line-height:1.2}
+.btn-ok-reporte:hover{background:rgba(229,57,53,.15)}
+.badge-menu-rojo{background:#e53935!important}
+.aviso-sin-conexion-menu{color:#ff8a80;text-align:center;font-size:.9rem;padding:10px}
+</style></head>
+<body><!-- Botón menú -->
+<button class="btn-menu" id="btn-menu">☰<span class="badge-menu" id="badge-menu" style="display:none">0</span></button>
+
+<!-- Nombre de usuario -->
+<div class="nombre-usuario" id="nombre-usuario" title="Toca para cambiar tu foto de perfil"></div>
+<input type="file" id="input-foto-perfil" accept="image/*" class="input-oculto">
+<input type="file" id="input-foto-perfil-archivos" accept="*/*" class="input-oculto">
+
+<div class="modal-selector-imagen" id="modal-selector-perfil">
+  <div class="selector-contenido">
+    <button class="btn-cerrar-selector" id="btn-cerrar-selector-perfil">×</button>
+    <h3>Elegir foto de perfil</h3>
+    <div class="selector-opciones">
+      <button class="opcion-imagen" id="opcion-galeria-perfil">🖼️ Galería</button>
+      <button class="opcion-imagen" id="opcion-archivos-perfil">📁 Archivos</button>
+    </div>
+  </div>
+</div>
+<div class="modal-perfil-usuario" id="modal-perfil-usuario" style="position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:4900;">
+  <div id="perfil-usuario-caja" style="background:var(--superficie);border:1px solid var(--borde);border-radius:14px;padding:24px 22px 20px;width:min(92vw,420px);min-height:280px;text-align:center;position:relative;">
+    <button id="cerrar-perfil-usuario" style="position:absolute;right:8px;top:6px;background:none;border:0;color:#fff;font-size:24px;cursor:pointer">×</button>
+    <img id="perfil-usuario-imagen" class="foto-perfil-mensaje" style="width:86px;height:86px;margin:0 auto 10px;display:block;cursor:default">
+    <div id="perfil-usuario-admin"></div><strong id="perfil-usuario-nombre"></strong>
+    <div class="perfil-stats">
+      <button type="button" class="perfil-stat" id="btn-ver-seguidores"><strong id="perfil-n-seguidores">0</strong><span>Seguidores</span></button>
+      <button type="button" class="perfil-stat" id="btn-ver-siguiendo"><strong id="perfil-n-siguiendo">0</strong><span>Siguiendo</span></button>
+      <button type="button" class="perfil-stat" id="btn-ver-megustas"><strong id="perfil-n-megustas">0</strong><span>Me gusta</span></button>
+    </div>
+    <div class="lista-seguimiento" id="lista-seguimiento"></div>
+    <button id="btn-seguir-perfil" class="btn-enviar" style="margin-top:10px;display:none">Seguir</button>
+    <br><button id="btn-chat-perfil" class="btn-enviar" style="margin-top:10px">Chatear en privado</button>
+    <button id="btn-reportar-perfil" style="position:absolute;bottom:14px;left:14px;background:none;border:none;color:#f44336;font-size:0.85rem;cursor:pointer;font-weight:600;display:none">Reportar</button>
+    <button id="btn-cerrar-sesion-perfil" class="btn-enviar" style="margin-top:12px;background:#c62828;display:none">Cerrar sesión</button>
+  </div>
+</div>
+
+<!-- Modal reportar -->
+<div id="modal-reportar" style="position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:5200;">
+  <div style="background:var(--superficie);border:1px solid var(--borde);border-radius:14px;padding:22px;width:min(90vw,340px);text-align:center;position:relative;">
+    <button id="cerrar-modal-reportar" style="position:absolute;right:8px;top:6px;background:none;border:0;color:#fff;font-size:22px;cursor:pointer">×</button>
+    <h3 style="color:var(--acento);margin-bottom:12px">Reportar usuario</h3>
+    <p id="reportar-nombre-objetivo" style="color:var(--texto-suave);font-size:0.9rem;margin-bottom:10px"></p>
+    <textarea id="input-asunto-reportar" placeholder="Escriba su asunto..." rows="4" style="width:100%;padding:10px;border-radius:8px;background:var(--fondo);border:1px solid var(--borde);color:var(--texto);font-family:var(--fuente);resize:vertical;font-size:0.95rem"></textarea>
+    <button id="btn-enviar-reporte" class="btn-enviar" style="margin-top:12px;padding:8px 18px;font-size:0.9rem">Enviar</button>
+  </div>
+</div>
+
+<div class="modal-foto-perfil" id="modal-foto-perfil">
+  <button class="cerrar-foto" id="cerrar-foto-perfil">×</button>
+  <img id="foto-perfil-ampliada" alt="Foto de perfil">
+</div>
+
+<!-- Overlay menú -->
+<div class="overlay-menu" id="overlay-menu"></div>
+
+<!-- Menú lateral de usuarios -->
+<div class="menu-lateral" id="menu-lateral">
+    <div id="perfil-menu-superior" style="text-align:center;margin:4px 0 12px"><span class="foto-perfil-mensaje" id="foto-menu-usuario" style="display:inline-block;background:#555"></span></div>
+    <button class="btn-cerrar-menu" id="btn-cerrar-menu">×</button>
+    <h3>Usuarios</h3>
+    <div class="lista-usuarios" id="lista-usuarios">
+        <p style="color:var(--texto-suave); text-align:center;">Cargando...</p>
+    </div>
+</div>
+
+<!-- Modal de login -->
+<div class="modal-nombre" id="modal-nombre">
+    <div class="modal-nombre-contenido">
+        <h2>Iniciar sesión</h2>
+        <div class="checkbox-mostrar-password" id="bloque-mostrar-password" style="order:0">
+            <input type="checkbox" id="mostrar-password">
+            <label for="mostrar-password">Mostrar contraseña</label>
+        </div>
+        <select id="select-nombre" aria-label="Selecciona una cuenta">
+            <option value="">Selecciona una cuenta</option>
+        </select>
+        <p class="aviso-sin-conexion" id="aviso-sin-conexion">estás sin conexión</p>
+        <input type="text" id="input-nombre" placeholder="Nombre de usuario" autocomplete="off" style="display:none">
+        <label id="label-password" for="input-password" style="display:block;margin-top:6px;color:var(--texto-suave)">Selecciona una cuenta</label>
+        <input type="password" id="input-password" placeholder="Contraseña" autocomplete="current-password">
+        <button class="btn-enviar" id="btn-entrar">Entrar</button>
+        <span class="link-nueva-cuenta" id="link-nueva-cuenta">Crear nueva cuenta</span>
+    </div>
+</div>
+
+<!-- Chat principal -->
+<div class="contenedor-chat">
+    <h1>💬 Chat en vivo</h1>
+
+    <div class="area-mensajes" id="area-mensajes">
+        <p style="color:var(--texto-suave); text-align:center;">Cargando mensajes...</p>
+    </div>
+
+    <div id="banner-respuesta-publico" class="banner-respuesta" style="display: none;">
+        <span id="texto-cita-publico">Respondiendo a...</span>
+        <button class="btn-cancelar-respuesta" id="btn-cancelar-respuesta-publico">✕</button>
+    </div>
+
+    <form class="formulario-chat" id="formulario-chat">
+        <div class="fila-input">
+            <input type="text" id="input-mensaje" placeholder="Escribe un mensaje..." autocomplete="off">
+            <button type="button" class="btn-imagen" id="btn-imagen-publico">🖼️</button>
+            <button type="button" class="btn-imagen" id="btn-grabar-publico" title="Grabar audio">🎙️</button>
+            <button type="submit" class="btn-enviar" id="btn-enviar-publico">Enviar</button>
+        </div>
+        <!-- Inputs de archivo con clase input-oculto -->
+        <input type="file" id="input-imagen-publico" accept="image/*,video/*" class="input-oculto">
+        <input type="file" id="input-imagen-camara-publico" accept="image/*" capture="environment" class="input-oculto">
+        <input type="file" id="input-imagen-archivos-publico" accept="*/*" class="input-oculto">
+        <input type="file" id="input-audio-publico" accept="audio/*" class="input-oculto">
+    </form>
+</div>
+
+<!-- Modal selector de imagen público -->
+<div class="modal-selector-imagen" id="modal-selector-publico">
+    <div class="selector-contenido">
+        <button class="btn-cerrar-selector" id="btn-cerrar-selector-publico">×</button>
+        <h3>Selecciona una opción</h3>
+        <div class="selector-opciones">
+            <button class="opcion-imagen" id="opcion-camara-publico">📷 Cámara</button>
+            <button class="opcion-imagen" id="opcion-galeria-publico">🖼️ Galería</button>
+            <button class="opcion-imagen" id="opcion-archivos-publico">📁 Archivos</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de mensajes privados -->
+<div class="modal-privados" id="modal-privados">
+    <div class="modal-privados-contenido">
+        <button class="btn-cerrar-privados" id="btn-cerrar-privados">×</button>
+        <h3>Mensajes privados🔒</h3>
+        <div class="area-privados" id="area-privados">
+            <p style="color:var(--texto-suave); text-align:center;">Cargando...</p>
+        </div>
+
+        <div id="banner-respuesta-privado" class="banner-respuesta" style="display: none;">
+            <span id="texto-cita-privado">Respondiendo a...</span>
+            <button class="btn-cancelar-respuesta" id="btn-cancelar-respuesta-privado">✕</button>
+        </div>
+
+        <form class="formulario-chat" id="formulario-privado">
+            <div class="fila-input">
+                <input type="text" id="input-mensaje-privado" placeholder="Escribe un mensaje privado..." autocomplete="off">
+                <button type="button" class="btn-imagen" id="btn-imagen-privado">🖼️</button>
+                <button type="button" class="btn-imagen" id="btn-grabar-privado" title="Grabar audio">🎙️</button>
+                <button type="submit" class="btn-enviar" id="btn-enviar-privado">Enviar privado</button>
+            </div>
+            <input type="file" id="input-imagen-privado" accept="image/*,video/*" class="input-oculto">
+            <input type="file" id="input-imagen-camara-privado" accept="image/*" capture="environment" class="input-oculto">
+            <input type="file" id="input-imagen-archivos-privado" accept="*/*" class="input-oculto">
+            <input type="file" id="input-audio-privado" accept="audio/*" class="input-oculto">
+        </form>
+    </div>
+</div>
+
+<!-- Modal selector de imagen privado -->
+<div class="modal-selector-imagen" id="modal-selector-privado">
+    <div class="selector-contenido">
+        <button class="btn-cerrar-selector" id="btn-cerrar-selector-privado">×</button>
+        <h3>Selecciona una opción</h3>
+        <div class="selector-opciones">
+            <button class="opcion-imagen" id="opcion-camara-privado">📷 Cámara</button>
+            <button class="opcion-imagen" id="opcion-galeria-privado">🖼️ Galería</button>
+            <button class="opcion-imagen" id="opcion-archivos-privado">📁 Archivos</button>
+        </div>
+    </div>
+</div><script>
+    // ========== CONFIGURACIÓN DE FIREBASE ==========
+    const firebaseConfig = {
+        apiKey: "AIzaSyCZ9L6D9zJAM1gcoGHb5-2c_Wk_6Mk8cKY",
+        authDomain: "spotify-dc10a.firebaseapp.com",
+        projectId: "spotify-dc10a",
+        storageBucket: "spotify-dc10a.firebasestorage.app",
+        messagingSenderId: "529088119775",
+        appId: "1:529088119775:web:05ff17ab38a6301f423a6a"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+    // Precarga temprana de cuentas para el selector de login
+    setTimeout(function(){ try { if (typeof cargarCuentasParaLogin === "function") cargarCuentasParaLogin(); } catch(_){} }, 0);
+
+    // ========== ELEMENTOS ==========
+    const modalNombre = document.getElementById("modal-nombre");
+    const inputNombre = document.getElementById("input-nombre");
+    const selectNombre = document.getElementById("select-nombre");
+    const bloqueMostrarPassword = document.getElementById("bloque-mostrar-password");
+    const inputPassword = document.getElementById("input-password");
+    const labelPassword = document.getElementById("label-password");
+    const btnEntrar = document.getElementById("btn-entrar");
+    const linkNuevaCuenta = document.getElementById("link-nueva-cuenta");
+    const areaMensajes = document.getElementById("area-mensajes");
+    const formularioChat = document.getElementById("formulario-chat");
+    const inputMensaje = document.getElementById("input-mensaje");
+    const btnImagenPublico = document.getElementById("btn-imagen-publico");
+    const btnGrabarPublico = document.getElementById("btn-grabar-publico");
+    const inputImagenPublico = document.getElementById("input-imagen-publico");
+    const inputCamaraPublico = document.getElementById("input-imagen-camara-publico");
+    const inputArchivosPublico = document.getElementById("input-imagen-archivos-publico");
+    const btnMenu = document.getElementById("btn-menu");
+    const btnCerrarMenu = document.getElementById("btn-cerrar-menu");
+    const menuLateral = document.getElementById("menu-lateral");
+    const overlayMenu = document.getElementById("overlay-menu");
+    const listaUsuarios = document.getElementById("lista-usuarios");
+    const nombreUsuarioElemento = document.getElementById("nombre-usuario");
+    const btnVerPrivados = document.getElementById("btn-ver-privados");
+    const badgePrivados = document.getElementById("badge-privados");
+    const modalPrivados = document.getElementById("modal-privados");
+    const btnCerrarPrivados = document.getElementById("btn-cerrar-privados");
+    const areaPrivados = document.getElementById("area-privados");
+    const formularioPrivado = document.getElementById("formulario-privado");
+    const inputMensajePrivado = document.getElementById("input-mensaje-privado");
+    const btnImagenPrivado = document.getElementById("btn-imagen-privado");
+    const btnGrabarPrivado = document.getElementById("btn-grabar-privado");
+    const btnEnviarPublico=document.getElementById("btn-enviar-publico"); const btnEnviarPrivado=document.getElementById("btn-enviar-privado"); const inputFotoPerfil=document.getElementById("input-foto-perfil"); const inputFotoPerfilArchivos=document.getElementById("input-foto-perfil-archivos"); const modalSelectorPerfil=document.getElementById("modal-selector-perfil"); const btnCerrarSelectorPerfil=document.getElementById("btn-cerrar-selector-perfil"); const opcionGaleriaPerfil=document.getElementById("opcion-galeria-perfil"); const opcionArchivosPerfil=document.getElementById("opcion-archivos-perfil"); const badgeMenu=document.getElementById("badge-menu");
+    const inputImagenPrivado = document.getElementById("input-imagen-privado");
+    const inputCamaraPrivado = document.getElementById("input-imagen-camara-privado");
+    const inputArchivosPrivado = document.getElementById("input-imagen-archivos-privado");
+    const inputAudioPublico = document.getElementById("input-audio-publico");
+    const inputAudioPrivado = document.getElementById("input-audio-privado");
+    const mostrarPassword = document.getElementById("mostrar-password");
+    const bannerRespuestaPublico = document.getElementById("banner-respuesta-publico");
+    const textoCitaPublico = document.getElementById("texto-cita-publico");
+    const btnCancelarRespuestaPublico = document.getElementById("btn-cancelar-respuesta-publico");
+    const bannerRespuestaPrivado = document.getElementById("banner-respuesta-privado");
+    const textoCitaPrivado = document.getElementById("texto-cita-privado");
+    const btnCancelarRespuestaPrivado = document.getElementById("btn-cancelar-respuesta-privado");
+    const modalSelectorPublico = document.getElementById("modal-selector-publico");
+    const modalSelectorPrivado = document.getElementById("modal-selector-privado");
+    const btnCerrarSelectorPublico = document.getElementById("btn-cerrar-selector-publico");
+    const btnCerrarSelectorPrivado = document.getElementById("btn-cerrar-selector-privado");
+    const opcionesPublico = {
+        camara: document.getElementById("opcion-camara-publico"),
+        galeria: document.getElementById("opcion-galeria-publico"),
+        archivos: document.getElementById("opcion-archivos-publico"),
+    };
+    const opcionesPrivado = {
+        camara: document.getElementById("opcion-camara-privado"),
+        galeria: document.getElementById("opcion-galeria-privado"),
+        archivos: document.getElementById("opcion-archivos-privado"),
+    };
+
+    let nombreUsuario = localStorage.getItem("chat_nombre") || "";
+    let sessionToken = localStorage.getItem("chat_token") || null;
+    let usuarioSeleccionado = null;
+    let modoCreacion = false;
+    let mensajeRespondidoPublico = null;
+    let mensajeRespondidoPrivado = null;
+    let contadorPrivadosNuevos = 0;
+    let usuarioEliminadoDetectado = false;
+    let esAdministrador = false;
+    let colorTextoAdmin = "inherit";
+    let grabacionPublica = null;
+    let grabacionPrivada=null;
+    let perfilesUsuarios={}; let administradoresUsuarios={}; let seePrivateTarget=null;
+    let conteoPrivadosPorUsuario={};
+    const duracionesAudioCache = {};
+    const audiosListos = new Set();
+    const mensajesMostradosEliminados = new Set();
+    const ESPERA_NUEVA_CUENTA_MS = 5 * 60 * 1000;
+
+    nombreUsuarioElemento.addEventListener("click",()=>{if(nombreUsuario)modalSelectorPerfil.classList.add("mostrar")});
+btnCerrarSelectorPerfil.addEventListener("click",()=>modalSelectorPerfil.classList.remove("mostrar"));
+modalSelectorPerfil.addEventListener("click",e=>{if(e.target===modalSelectorPerfil)modalSelectorPerfil.classList.remove("mostrar")});
+opcionGaleriaPerfil.addEventListener("click",()=>{modalSelectorPerfil.classList.remove("mostrar");inputFotoPerfil.click()});
+opcionArchivosPerfil.addEventListener("click",()=>{modalSelectorPerfil.classList.remove("mostrar");inputFotoPerfilArchivos.click()});
+async function aplicarFotoPerfilLocal(d){
+  if(!d||!nombreUsuario)return;
+  const key=nombreUsuario.toLowerCase().trim();
+  const fm=document.getElementById("foto-menu-usuario");
+  if(fm){
+    fm.style.background="transparent";
+    fm.innerHTML=`<img src="${d}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    fm.style.width="36px"; fm.style.height="36px"; fm.style.overflow="hidden";
+  }
+  document.querySelectorAll(".foto-perfil-mensaje[data-user]").forEach(img=>{
+    if(img.dataset.user===key) img.src=d;
+  });
+}
+async function guardarFotoPerfil(f){
+  if(!f)return;
+  if(!f.type.startsWith("image/")){alert("Selecciona una imagen válida.");return}
+  try{
+    const d=await convertirImagenParaChat(f);
+    const key=nombreUsuario.toLowerCase().trim();
+    localStorage.setItem("chat_fotoPerfil",d);
+    perfilesUsuarios[key]=d;
+    aplicarFotoPerfilLocal(d);
+    mostrarNombreUsuario();
+    await db.collection("usuarios").doc(key).update({fotoPerfil:d});
+  }
+  catch(e){alert("No se pudo guardar la foto: "+e.message)}
+}
+inputFotoPerfil.addEventListener("change",()=>{guardarFotoPerfil(inputFotoPerfil.files[0]);inputFotoPerfil.value=""});
+inputFotoPerfilArchivos.addEventListener("change",()=>{guardarFotoPerfil(inputFotoPerfilArchivos.files[0]);inputFotoPerfilArchivos.value=""});
+
+const modalPerfilUsuario=document.getElementById("modal-perfil-usuario");
+const perfilUsuarioImagen=document.getElementById("perfil-usuario-imagen");
+const perfilUsuarioNombre=document.getElementById("perfil-usuario-nombre");
+const perfilUsuarioAdmin=document.getElementById("perfil-usuario-admin");
+const btnChatPerfil=document.getElementById("btn-chat-perfil");
+const btnSeguirPerfil=document.getElementById("btn-seguir-perfil");
+const perfilNSeguidores=document.getElementById("perfil-n-seguidores");
+const perfilNSiguiendo=document.getElementById("perfil-n-siguiendo");
+const listaSeguimiento=document.getElementById("lista-seguimiento");
+const cerrarPerfilUsuario=document.getElementById("cerrar-perfil-usuario");
+let perfilUsuarioSeleccionado=null;
+let perfilEsPropio=false;
+
+async function contarSeguimiento(usuario){
+  const min=(usuario.nombreMin||usuario.nombre||"").toLowerCase();
+  const siguiendo=Array.isArray(usuario.siguiendo)?usuario.siguiendo:[];
+  let seguidores=Array.isArray(usuario.seguidores)?usuario.seguidores.length:0;
+  if(!Array.isArray(usuario.seguidores)){
+    try{
+      const snap=await db.collection("usuarios").where("siguiendo","array-contains",min).get();
+      seguidores=snap.size;
+    }catch(_){ seguidores=0; }
+  }
+  return { seguidores, siguiendo: siguiendo.length, listaSiguiendo: siguiendo, listaSeguidores: usuario.seguidores||[] };
+}
+
+function yoSigoA(objetivoMin){
+  const yo=perfilesUsuarios._yoSiguiendo || [];
+  return yo.includes(objetivoMin);
+}
+
+async function cargarMiSiguiendo(){
+  try{
+    const doc=await db.collection("usuarios").doc(nombreUsuario.toLowerCase()).get();
+    perfilesUsuarios._yoSiguiendo = doc.exists && Array.isArray(doc.data().siguiendo) ? doc.data().siguiendo : [];
+  }catch(_){ perfilesUsuarios._yoSiguiendo=[]; }
+}
+
+async function abrirPerfilUsuario(usuario, propio=false){
+  perfilUsuarioSeleccionado=usuario;
+  perfilEsPropio=propio || (usuario.nombreMin||usuario.nombre||"").toLowerCase()===nombreUsuario.toLowerCase();
+  perfilUsuarioNombre.textContent=usuario.nombre;
+  perfilUsuarioAdmin.innerHTML=usuario.administrador?'<span class="admin-etiqueta">👑admin👑</span>':'';
+  perfilUsuarioImagen.src=usuario.fotoPerfil||'';
+  perfilUsuarioImagen.style.background=usuario.fotoPerfil?'transparent':'#555';
+  listaSeguimiento.classList.remove("mostrar");
+  listaSeguimiento.innerHTML="";
+  const stats=await contarSeguimiento(usuario);
+  perfilNSeguidores.textContent=stats.seguidores;
+  perfilNSiguiendo.textContent=stats.siguiendo;
+  usuario._listaSiguiendo=stats.listaSiguiendo;
+  usuario._listaSeguidores=stats.listaSeguidores;
+  const min=(usuario.nombreMin||usuario.nombre||"").toLowerCase();
+  const nLikes=await contarMeGustasUsuario(min);
+  const elMeg=document.getElementById("perfil-n-megustas");
+  if(elMeg) elMeg.textContent=String(nLikes);
+  const btnRep=document.getElementById("btn-reportar-perfil");
+  const btnLogout=document.getElementById("btn-cerrar-sesion-perfil");
+  if(perfilEsPropio){
+    btnSeguirPerfil.style.display="none";
+    btnChatPerfil.style.display="none";
+    if(btnRep) btnRep.style.display="none";
+    if(btnLogout) btnLogout.style.display="inline-block";
+  } else {
+    btnChatPerfil.style.display="inline-block";
+    btnSeguirPerfil.style.display="inline-block";
+    if(btnRep) btnRep.style.display="inline-block";
+    if(btnLogout) btnLogout.style.display="none";
+    await cargarMiSiguiendo();
+    const sigue= (perfilesUsuarios._yoSiguiendo||[]).includes((usuario.nombreMin||usuario.nombre).toLowerCase());
+    btnSeguirPerfil.textContent=sigue?"Dejar de seguir":"Seguir";
+  }
+  modalPerfilUsuario.style.display='flex';
+}
+
+async function pintarListaSeguimiento(tipo){
+  if(!perfilUsuarioSeleccionado)return;
+  listaSeguimiento.classList.add("mostrar");
+  listaSeguimiento.innerHTML='<p style="color:var(--texto-suave);text-align:center">Cargando...</p>';
+  const min=(perfilUsuarioSeleccionado.nombreMin||perfilUsuarioSeleccionado.nombre||"").toLowerCase();
+  let ids=[];
+  if(tipo==="siguiendo"){
+    ids=Array.isArray(perfilUsuarioSeleccionado.siguiendo)?perfilUsuarioSeleccionado.siguiendo.slice():[];
+  } else {
+    if(Array.isArray(perfilUsuarioSeleccionado.seguidores) && perfilUsuarioSeleccionado.seguidores.length){
+      ids=perfilUsuarioSeleccionado.seguidores.slice();
+    } else {
+      try{
+        const snap=await db.collection("usuarios").where("siguiendo","array-contains",min).get();
+        ids=[]; snap.forEach(d=>ids.push(d.data().nombre||d.id));
+      }catch(_){ ids=[]; }
+    }
+  }
+  if(!ids.length){
+    listaSeguimiento.innerHTML=`<p style="color:var(--texto-suave);text-align:center">${tipo==="siguiendo"?"No sigue a nadie.":"Sin seguidores."}</p>`;
+    return;
+  }
+  listaSeguimiento.innerHTML="";
+  for(const id of ids){
+    const item=document.createElement("div");
+    item.className="item-seguimiento";
+    item.textContent=id;
+    listaSeguimiento.appendChild(item);
+  }
+}
+
+document.getElementById("btn-ver-seguidores").addEventListener("click",()=>pintarListaSeguimiento("seguidores"));
+document.getElementById("btn-ver-siguiendo").addEventListener("click",()=>pintarListaSeguimiento("siguiendo"));
+
+btnSeguirPerfil.addEventListener("click", async ()=>{
+  if(!perfilUsuarioSeleccionado||perfilEsPropio)return;
+  const yo=nombreUsuario.toLowerCase();
+  const objetivo=(perfilUsuarioSeleccionado.nombreMin||perfilUsuarioSeleccionado.nombre).toLowerCase();
+  await cargarMiSiguiendo();
+  const sigue=(perfilesUsuarios._yoSiguiendo||[]).includes(objetivo);
+  try{
+    if(sigue){
+      await db.collection("usuarios").doc(yo).update({siguiendo: firebase.firestore.FieldValue.arrayRemove(objetivo)});
+      await db.collection("usuarios").doc(objetivo).update({seguidores: firebase.firestore.FieldValue.arrayRemove(yo)});
+    } else {
+      await db.collection("usuarios").doc(yo).update({siguiendo: firebase.firestore.FieldValue.arrayUnion(objetivo)});
+      await db.collection("usuarios").doc(objetivo).update({seguidores: firebase.firestore.FieldValue.arrayUnion(nombreUsuario)});
+    }
+    const fresco=await verificarUsuario(perfilUsuarioSeleccionado.nombre);
+    if(fresco) await abrirPerfilUsuario(fresco, false);
+  }catch(e){ alert("No se pudo actualizar el seguimiento: "+e.message); }
+});
+
+cerrarPerfilUsuario.addEventListener('click',()=>modalPerfilUsuario.style.display='none');
+modalPerfilUsuario.addEventListener('click',e=>{if(e.target===modalPerfilUsuario)modalPerfilUsuario.style.display='none'});
+btnChatPerfil.addEventListener('click',()=>{if(!perfilUsuarioSeleccionado||perfilEsPropio)return;usuarioSeleccionado=perfilUsuarioSeleccionado.nombre;modalPerfilUsuario.style.display='none';cerrarMenu();modalPrivados.classList.add('mostrar');cargarMensajesPrivados();marcarMensajesRecibidosComoLeidos();});
+
+document.getElementById("btn-cerrar-sesion-perfil").addEventListener("click",()=>{
+  if(!confirm("¿Cerrar sesión?")) return;
+  localStorage.removeItem("chat_nombre");
+  localStorage.removeItem("chat_token");
+  localStorage.removeItem("chat_fotoPerfil");
+  nombreUsuario="";
+  sessionToken=null;
+  location.reload();
+});
+
+const modalReportar=document.getElementById("modal-reportar");
+const inputAsuntoReportar=document.getElementById("input-asunto-reportar");
+document.getElementById("btn-reportar-perfil").addEventListener("click",()=>{
+  if(!perfilUsuarioSeleccionado||perfilEsPropio) return;
+  document.getElementById("reportar-nombre-objetivo").textContent="Usuario: "+perfilUsuarioSeleccionado.nombre;
+  inputAsuntoReportar.value="";
+  modalReportar.style.display="flex";
+});
+document.getElementById("cerrar-modal-reportar").addEventListener("click",()=>modalReportar.style.display="none");
+modalReportar.addEventListener("click",e=>{if(e.target===modalReportar)modalReportar.style.display="none"});
+document.getElementById("btn-enviar-reporte").addEventListener("click", async ()=>{
+  const asunto=(inputAsuntoReportar.value||"").trim();
+  if(!asunto){alert("Escriba su asunto.");return}
+  if(!perfilUsuarioSeleccionado||!nombreUsuario)return;
+  try{
+    await db.collection("reportes").add({
+      de: nombreUsuario,
+      deMin: nombreUsuario.toLowerCase(),
+      contra: perfilUsuarioSeleccionado.nombre,
+      contraMin: (perfilUsuarioSeleccionado.nombreMin||perfilUsuarioSeleccionado.nombre||"").toLowerCase(),
+      asunto,
+      leido: false,
+      fecha: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    modalReportar.style.display="none";
+    modalPerfilUsuario.style.display="none";
+    alert("Reporte enviado.");
+  }catch(e){alert("No se pudo enviar el reporte: "+e.message)}
+});
+
+async function actualizarBadgeReportes(){
+  if(!esAdministrador||!nombreUsuario){
+    if(badgeMenu){ /* keep privados badge logic elsewhere */ }
+    return;
+  }
+  try{
+    const q=await db.collection("reportes").where("leido","==",false).get();
+    const n=q.size;
+    window._reportesPendientes=n;
+    if(badgeMenu){
+      const priv=contadorPrivadosNuevos||0;
+      const total=priv+n;
+      badgeMenu.textContent=String(total);
+      badgeMenu.style.display=total?"inline-flex":"none";
+      if(n>0) badgeMenu.classList.add("badge-menu-rojo");
+      else if(!priv) badgeMenu.classList.remove("badge-menu-rojo");
+      else badgeMenu.classList.remove("badge-menu-rojo");
+      if(n>0) badgeMenu.classList.add("badge-menu-rojo");
+    }
+  }catch(e){console.warn(e)}
+}
+
+async function cargarReportesEnMenu(){
+  let caja=document.getElementById("lista-reportes-admin");
+  if(!caja){
+    caja=document.createElement("div");
+    caja.id="lista-reportes-admin";
+    caja.className="lista-reportes";
+    const menu=document.getElementById("menu-lateral");
+    if(menu) menu.appendChild(caja);
+  }
+  if(!esAdministrador){caja.classList.remove("mostrar");caja.innerHTML="";return}
+  caja.classList.add("mostrar");
+  caja.innerHTML='<h3 style="color:#e53935;font-size:1rem;margin-bottom:8px">Reportes</h3><p style="color:var(--texto-suave);text-align:center;font-size:.85rem">Cargando...</p>';
+  try{
+    const snap=await db.collection("reportes").orderBy("fecha","desc").limit(40).get();
+    if(snap.empty){caja.innerHTML='<h3 style="color:#e53935;font-size:1rem;margin-bottom:8px">Reportes</h3><p style="color:var(--texto-suave);text-align:center">Sin reportes.</p>';return}
+    caja.innerHTML='<h3 style="color:#e53935;font-size:1rem;margin-bottom:8px">Reportes</h3>';
+    const batch=db.batch(); let hay=false;
+    snap.forEach(doc=>{
+      const r=doc.data();
+      const fecha=r.fecha?.toDate?new Date(r.fecha.toDate()).toLocaleString():"";
+      const item=document.createElement("div");
+      item.className="item-reporte";
+      item.innerHTML=`<div class="rep-meta">${escaparHTML(r.de||"?")} → ${escaparHTML(r.contra||"?")} · ${fecha}${r.leido?"":" · <strong style=color:#e53935>Nuevo</strong>"}</div><div>${escaparHTML(r.asunto||"")}</div>`;
+      const btnOk=document.createElement("button");
+      btnOk.type="button";
+      btnOk.className="btn-ok-reporte";
+      btnOk.textContent="ok";
+      btnOk.title="Eliminar reporte";
+      btnOk.addEventListener("click", async (ev)=>{
+        ev.stopPropagation();
+        try{
+          await db.collection("reportes").doc(doc.id).delete();
+          item.remove();
+          if(!caja.querySelector(".item-reporte")){
+            caja.innerHTML='<h3 style="color:#e53935;font-size:1rem;margin-bottom:8px">Reportes</h3><p style="color:var(--texto-suave);text-align:center">Sin reportes.</p>';
+          }
+          actualizarBadgeReportes();
+        }catch(err){alert("No se pudo eliminar el reporte: "+(err.message||err));}
+      });
+      item.appendChild(btnOk);
+      caja.appendChild(item);
+      if(r.leido===false){batch.update(doc.ref,{leido:true});hay=true}
+    });
+    if(hay) await batch.commit();
+    actualizarBadgeReportes();
+  }catch(e){
+    caja.innerHTML='<h3 style="color:#e53935;font-size:1rem">Reportes</h3><p class="aviso-sin-conexion-menu">Sin Conexión</p>';
+  }
+}
+
+
+const modalFotoPerfil=document.getElementById("modal-foto-perfil");
+const fotoPerfilAmpliada=document.getElementById("foto-perfil-ampliada");
+document.getElementById("cerrar-foto-perfil").addEventListener("click",()=>modalFotoPerfil.classList.remove("mostrar"));
+modalFotoPerfil.addEventListener("click",e=>{if(e.target===modalFotoPerfil)modalFotoPerfil.classList.remove("mostrar")});
+function abrirFotoPerfil(foto){if(!foto)return;fotoPerfilAmpliada.src=foto;modalFotoPerfil.classList.add("mostrar")}
+
+// ========== FUNCIONES DE SESIÓN ==========
+    async function cargarCuentasParaLogin(){
+        if(modoCreacion)return;
+        const aviso=document.getElementById("aviso-sin-conexion");
+        try{
+            if(!navigator.onLine){
+                if(aviso) aviso.style.display="block";
+                return;
+            }
+            // Carga rápida: primero cache local de Firestore, luego servidor en segundo plano
+            let snap;
+            try {
+                snap = await db.collection("usuarios").get({ source: "cache" });
+                if (snap.empty) throw new Error("cache vacía");
+            } catch (_) {
+                snap = await db.collection("usuarios").get();
+            }
+            const nombres = [];
+            snap.forEach(doc => {
+                const u = doc.data();
+                if (u && u.nombre) nombres.push(u.nombre);
+            });
+            nombres.sort((a,b)=>a.localeCompare(b,"es",{sensitivity:"base"}));
+            selectNombre.innerHTML='<option value="">Selecciona una cuenta</option>';
+            for (const n of nombres) {
+                const o=document.createElement("option");
+                o.value=n; o.textContent=n;
+                selectNombre.appendChild(o);
+            }
+            if(aviso) aviso.style.display="none";
+            // Actualizar desde servidor en segundo plano sin bloquear la UI
+            db.collection("usuarios").get({ source: "server" }).then(serverSnap => {
+                if (modoCreacion) return;
+                const nombres2 = [];
+                serverSnap.forEach(doc => {
+                    const u = doc.data();
+                    if (u && u.nombre) nombres2.push(u.nombre);
+                });
+                nombres2.sort((a,b)=>a.localeCompare(b,"es",{sensitivity:"base"}));
+                const actual = selectNombre.value;
+                selectNombre.innerHTML='<option value="">Selecciona una cuenta</option>';
+                for (const n of nombres2) {
+                    const o=document.createElement("option");
+                    o.value=n; o.textContent=n;
+                    selectNombre.appendChild(o);
+                }
+                if (actual) selectNombre.value = actual;
+            }).catch(()=>{});
+        }catch(e){
+            console.warn("No se pudieron cargar las cuentas:",e.message);
+            if(aviso) aviso.style.display="block";
+        }
+    }
+    selectNombre.addEventListener("change",()=>{inputNombre.value=selectNombre.value;labelPassword.textContent=selectNombre.value?"Escriba su contraseña":"Selecciona una cuenta";});
+
+    function generarToken() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    async function verificarUsuario(nombre) {
+        const nombreMin = nombre.toLowerCase().trim();
+        if (!nombreMin) return null;
+        try {
+            const doc = await db.collection("usuarios").doc(nombreMin).get();
+            return doc.exists ? { ...doc.data(), id: doc.id } : null;
+        } catch (error) {
+            console.error("Error al verificar usuario:", error);
+            const msg = String(error && error.message ? error.message : error || "");
+            if (!navigator.onLine || /offline|client is offline|failed to get document|unavailable|network/i.test(msg)) {
+                return { __sinConexion: true };
+            }
+            return null;
+        }
+    }
+
+    function mostrarNombreUsuario() {
+        if (nombreUsuario) {
+            nombreUsuarioElemento.innerHTML = esAdministrador ? `<span class="admin-etiqueta">👑admin👑</span>${escaparHTML(nombreUsuario.toUpperCase())}` : escaparHTML(nombreUsuario.toUpperCase());
+            nombreUsuarioElemento.classList.add("mostrar");
+        } else {
+            nombreUsuarioElemento.classList.remove("mostrar");
+        }
+    }
+
+    selectNombre.addEventListener("change",()=>{inputNombre.value=selectNombre.value;});
+
+    mostrarPassword.addEventListener("change", () => {
+        inputPassword.type = mostrarPassword.checked ? "text" : "password";
+        const repetir = document.getElementById("repetir-password");
+        if (repetir) repetir.type = mostrarPassword.checked ? "text" : "password";
+    });
+
+    linkNuevaCuenta.addEventListener("click", () => {
+        modoCreacion = true;
+        selectNombre.style.display="none";
+        inputNombre.style.display="block";
+        bloqueMostrarPassword.style.order="0";
+        labelPassword.textContent = "Crea tu contraseña";
+        btnEntrar.textContent = "Crear cuenta";
+        linkNuevaCuenta.style.display = "none";
+
+        const contenedor = document.querySelector(".modal-nombre-contenido");
+        if (!document.getElementById("repetir-password")) {
+            const divRepetir = document.createElement("div");
+            divRepetir.innerHTML = `
+                <input type="password" id="repetir-password" placeholder="Repita contraseña" autocomplete="off">
+            `;
+            const passwordInput = document.getElementById("input-password");
+            if (passwordInput && passwordInput.parentElement === contenedor) {
+                contenedor.insertBefore(divRepetir, passwordInput.nextSibling);
+            } else {
+                contenedor.insertBefore(divRepetir, contenedor.querySelector(".btn-enviar"));
+            }
+        }
+        // En creación: el selector de mostrar contraseña queda arriba de los dos campos.
+        contenedor.insertBefore(bloqueMostrarPassword, contenedor.querySelector("#select-nombre") || inputNombre);
+        inputPassword.value = "";
+        inputPassword.focus();
+    });
+
+    btnEntrar.addEventListener("click", async () => {
+        const textoOriginalBoton=btnEntrar.textContent;
+        btnEntrar.disabled=true;
+        btnEntrar.textContent=modoCreacion?"Creando cuenta...":"Iniciando sesión...";
+        try {
+        const nombre = inputNombre.value.trim();
+        const password = inputPassword.value.trim();
+        if (!nombre || !password) {
+            alert("Escribe nombre y contraseña.");
+            return;
+        }
+
+        const nombreMin = nombre.toLowerCase().trim();
+        const usuarioExistente = await verificarUsuario(nombre);
+
+        if (modoCreacion) {
+            if (usuarioExistente) {
+                alert("Ese usuario ya existe. Inicie sesión.");
+                return;
+            }
+
+            const registroEliminado = await db.collection("cuentasEliminadas").doc(nombreMin).get();
+            const nuevoToken = generarToken();
+            const datosNuevaCuenta = {
+                nombre,
+                password,
+                tokenSesion: nuevoToken,
+                nombreMin,
+                creadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+                puedeEnviarDesde: registroEliminado.exists
+                    ? new Date(Date.now() + ESPERA_NUEVA_CUENTA_MS).toISOString()
+                    : null,
+                congeladoHasta: null,
+                administrador: false,
+                siguiendo: [],
+                seguidores: []
+            };
+
+            await db.collection("usuarios").doc(nombreMin).set(datosNuevaCuenta);
+            // La espera pertenece únicamente a esta recreación de la cuenta eliminada.
+            // Consumimos el registro para que otras cuentas no resulten afectadas y
+            // para que una futura recreación de este mismo nombre no herede otra espera.
+            if (registroEliminado.exists) {
+                await db.collection("cuentasEliminadas").doc(nombreMin).delete();
+            }
+            nombreUsuario = nombre;
+            sessionToken = nuevoToken;
+            esAdministrador = false;
+            localStorage.setItem("chat_nombre", nombreUsuario);
+            localStorage.setItem("chat_token", sessionToken);
+            localStorage.removeItem("chat_fotoPerfil");
+            modalNombre.style.display = "none";
+            mostrarNombreUsuario();
+            iniciarPresencia();
+            iniciarChat();
+            return;
+        }
+
+        if (usuarioExistente) {
+            if (usuarioExistente.password === password) {
+                const nuevoToken = generarToken();
+                await db.collection("usuarios").doc(nombreMin).update({ tokenSesion: nuevoToken });
+                nombreUsuario = usuarioExistente.nombre;
+                sessionToken = nuevoToken;
+                esAdministrador = usuarioExistente.administrador === true;
+                localStorage.setItem("chat_nombre", nombreUsuario);
+                localStorage.setItem("chat_token", sessionToken);
+                if (usuarioExistente.fotoPerfil) {
+                    localStorage.setItem("chat_fotoPerfil", usuarioExistente.fotoPerfil);
+                    perfilesUsuarios[nombreMin] = usuarioExistente.fotoPerfil;
+                } else {
+                    localStorage.removeItem("chat_fotoPerfil");
+                }
+                modalNombre.style.display = "none";
+                mostrarNombreUsuario();
+                iniciarPresencia();
+                iniciarChat();
+            } else {
+                alert("Contraseña incorrecta. Vuelva a intentarlo o cree una cuenta.");
+            }
+        } else {
+            alert("Usuario no encontrado. Cree una cuenta nueva.");
+        }
+        } catch(error) {
+            console.error(error);
+            const msg = String(error && error.message ? error.message : error || "");
+            const offline = !navigator.onLine || /offline|client is offline|Failed to get document|unavailable|network/i.test(msg);
+            if (modoCreacion && offline) {
+                alert("No se pudo crear la cuenta porque: Estás sin conexión conéctate a internet e inténtalo de nuevo.");
+            } else if (offline) {
+                alert("No se pudo completar la operación: Estás sin conexión. Conéctate a internet e inténtalo de nuevo.");
+            } else {
+                alert("No se pudo completar la operación: " + msg);
+            }
+        } finally {
+            btnEntrar.disabled=false;
+            btnEntrar.textContent=modoCreacion?"Crear cuenta":textoOriginalBoton;
+        }
+    });
+
+function vigilarSesionActual() {
+        if (!nombreUsuario || !sessionToken) return;
+        const nombreMin = nombreUsuario.toLowerCase().trim();
+        db.collection("usuarios").doc(nombreMin).onSnapshot(async function(doc) {
+            if (doc.exists) {
+                const data = doc.data();
+                esAdministrador=data.administrador===true; if(data.fotoPerfil){localStorage.setItem("chat_fotoPerfil",data.fotoPerfil);perfilesUsuarios[nombreMin]=data.fotoPerfil;} mostrarNombreUsuario();
+                if (data.tokenSesion !== sessionToken) {
+                    alert("Tu cuenta ha sido abierta en otro dispositivo. Se cerrará esta sesión.");
+                    localStorage.removeItem("chat_nombre");
+                    localStorage.removeItem("chat_token");
+                    nombreUsuario = "";
+                    mostrarNombreUsuario();
+                    location.reload();
+                }
+            } else {
+                // Una lectura vacía mientras el dispositivo está sin conexión no significa que la cuenta haya sido eliminada.
+                if (!navigator.onLine) return;
+                try {
+                    const servidor = await db.collection("usuarios").doc(nombreMin).get({source:"server"});
+                    if (servidor.exists) return;
+                } catch (_) { return; }
+                usuarioEliminadoDetectado = true;
+                alert("Tu cuenta ha sido eliminada. Debes crear una nueva cuenta o iniciar sesión con otra cuenta.");
+                localStorage.removeItem("chat_nombre");
+                localStorage.removeItem("chat_token");
+                nombreUsuario = "";
+                sessionToken = null;
+                mostrarNombreUsuario();
+                location.reload();
+            }
+        });
+    }
+
+    async function actualizarEstadoEnLinea(estado){
+        if(!nombreUsuario)return;
+        try{await db.collection("usuarios").doc(nombreUsuario.toLowerCase()).update({enLinea:estado,ultimaConexion:firebase.firestore.FieldValue.serverTimestamp()});}catch(e){console.warn("No se pudo actualizar estado online",e.message)}
+    }
+    async function limpiarMensajesDiarios(){
+  if(!esAdministrador)return;
+  try{
+    const ahora=new Date(); const limite=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate());
+    const ts=firebase.firestore.Timestamp.fromDate(limite);
+    const [chatSnap,privSnap]=await Promise.all([db.collection("chat").where("fecha","<",ts).get(),db.collection("privados").where("fecha","<",ts).get()]);
+    const urls=[]; const refs=[];
+    chatSnap.forEach(d=>{const m=d.data();refs.push(d.ref);if(m.url&&m.tipo!=="imagen")urls.push(m.url)});
+    privSnap.forEach(d=>{const m=d.data();refs.push(d.ref);if(m.url&&m.tipo!=="imagen")urls.push(m.url)});
+    for(let i=0;i<refs.length;i+=450){const b=db.batch();refs.slice(i,i+450).forEach(r=>b.delete(r));await b.commit();}
+    for(const url of urls){try{await storage.refFromURL(url).delete()}catch(e){}}
+  }catch(e){console.warn("Limpieza diaria no disponible:",e.message)}
+}
+function programarLimpiezaDiaria(){
+  const ejecutar=()=>{limpiarMensajesDiarios(); const n=new Date(); const siguiente=new Date(n.getFullYear(),n.getMonth(),n.getDate()+1); setTimeout(ejecutar,siguiente-n+1000)};
+  ejecutar();
+}
+
+function iniciarPresencia(){
+        actualizarEstadoEnLinea(true);
+        setInterval(()=>actualizarEstadoEnLinea(navigator.onLine),15000);
+        window.addEventListener("online",()=>actualizarEstadoEnLinea(true));
+        window.addEventListener("offline",()=>actualizarEstadoEnLinea(false));
+        window.addEventListener("pagehide",()=>{try{navigator.sendBeacon&&navigator.sendBeacon("data:,","")}catch(_){}; actualizarEstadoEnLinea(false);});
+    }
+
+    if (nombreUsuario && sessionToken) {
+        modalNombre.style.display = "none";
+        mostrarNombreUsuario();
+        iniciarPresencia();
+        programarLimpiezaDiaria();
+        window.addEventListener("load", iniciarChat);
+    } else {
+        window.addEventListener("load", () => {cargarCuentasParaLogin();selectNombre.focus();});
+        window.addEventListener("online", () => { const a=document.getElementById("aviso-sin-conexion"); if(a) a.style.display="none"; cargarCuentasParaLogin(); });
+        window.addEventListener("offline", () => { const a=document.getElementById("aviso-sin-conexion"); if(a && !modoCreacion) a.style.display="block"; });
+    }
+
+    // ========== MENÚ LATERAL ==========
+    btnMenu.addEventListener("click", async () => {
+        menuLateral.classList.add("abierto");
+        overlayMenu.classList.add("activo");
+        btnMenu.classList.add("oculto");
+        const fm=document.getElementById("foto-menu-usuario"); const pf=localStorage.getItem("chat_fotoPerfil"); if(fm&&pf){fm.style.background="transparent";fm.innerHTML=`<img src="${escaparHTML(pf)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;fm.style.width="32px";fm.style.height="32px";fm.style.overflow="hidden";}
+        await actualizarBadgePrivados();
+        await actualizarBadgeReportes();
+        await cargarUsuariosMenu();
+        if(esAdministrador) await cargarReportesEnMenu();
+    });
+
+    btnCerrarMenu.addEventListener("click", cerrarMenu);
+    overlayMenu.addEventListener("click", cerrarMenu);
+    document.getElementById("foto-menu-usuario").addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if(!nombreUsuario) return;
+        const u = await verificarUsuario(nombreUsuario);
+        if(u) abrirPerfilUsuario(u, true);
+    });
+
+    function cerrarMenu() {
+        menuLateral.classList.remove("abierto");
+        overlayMenu.classList.remove("activo");
+        btnMenu.classList.remove("oculto");
+    }
+
+    async function cargarUsuariosMenu() {
+        try {
+            if (!navigator.onLine) {
+                listaUsuarios.innerHTML = '<p class="aviso-sin-conexion-menu">Sin Conexión</p>';
+                return;
+            }
+            const snapshot = await db.collection("usuarios").get();
+            listaUsuarios.innerHTML = "";
+            snapshot.forEach(doc => {
+                const usuario = doc.data(); perfilesUsuarios[usuario.nombreMin]=usuario.fotoPerfil||""; administradoresUsuarios[usuario.nombreMin]=usuario.administrador===true;
+                if (usuario.nombreMin !== nombreUsuario.toLowerCase()) {
+                    const item = document.createElement("div");
+                    item.className = "usuario-item";
+                    item.dataset.nombre = usuario.nombre;
+
+                    const span = document.createElement("span");
+                    const ultima=usuario.ultimaConexion?.toDate?usuario.ultimaConexion.toDate().getTime():0; const conectado=usuario.enLinea===true && (Date.now()-ultima<45000); span.innerHTML = (usuario.administrador === true ? `<span class="admin-etiqueta">👑admin👑</span>${escaparHTML(usuario.nombre)}` : escaparHTML(usuario.nombre)) + (conectado?` <span class="estado-online">En Linea</span>`:"");
+
+                    const btn = document.createElement("button");
+                    btn.className = "btn-ver-perfil";
+                    btn.dataset.nombre = usuario.nombre;
+                    btn.textContent = "Ver perfil";
+                    const nPriv = conteoPrivadosPorUsuario[usuario.nombreMin] || 0;
+                    if (nPriv) {
+                        const badgeU = document.createElement("span");
+                        badgeU.className = "badge-usuario";
+                        badgeU.textContent = String(nPriv);
+                        btn.appendChild(badgeU);
+                    }
+                    btn.addEventListener("click", (ev) => {ev.stopPropagation();abrirPerfilUsuario(usuario);});
+                    item.addEventListener("click",()=>abrirPerfilUsuario(usuario));
+
+                    if (usuarioSeleccionado === usuario.nombre) {
+                        btn.classList.add("seleccionado");
+                        item.classList.add("seleccionado");
+                    }
+
+                    item.appendChild(span);
+                    item.appendChild(btn);
+                    listaUsuarios.appendChild(item);
+                }
+            });
+            if (listaUsuarios.children.length === 0) {
+                listaUsuarios.innerHTML = '<p style="color:var(--texto-suave); text-align:center;">No hay más usuarios.</p>';
+            }
+        } catch (error) {
+            console.error("Error al cargar usuarios:", error);
+            listaUsuarios.innerHTML = '<p class="aviso-sin-conexion-menu">Sin Conexión</p>';
+        }
+    }
+
+    function seleccionarUsuario(nombre, btn) {
+        if (usuarioSeleccionado === nombre) {
+            btn.classList.remove("seleccionado");
+            btn.closest('.usuario-item').classList.remove('seleccionado');
+            usuarioSeleccionado = null;
+            return;
+        }
+
+        document.querySelectorAll('.btn-seleccionar').forEach(b => b.classList.remove('seleccionado'));
+        document.querySelectorAll('.usuario-item').forEach(item => item.classList.remove('seleccionado'));
+
+        btn.classList.add("seleccionado");
+        btn.closest('.usuario-item').classList.add('seleccionado');
+        usuarioSeleccionado=nombre;if(seePrivateTarget&&nombre.toLowerCase()===seePrivateTarget.toLowerCase()){cerrarMenu();modalPrivados.classList.add("mostrar");cargarMensajesPrivados();seePrivateTarget=null}}
+
+    // ========== UTILIDADES ==========
+    function escaparHTML(texto) {
+        return String(texto)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function enlazarTexto(texto) {
+        return texto.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
+    function reproducirSonido() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.0);
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 2.0);
+        } catch(e) {
+            console.warn("No se pudo reproducir sonido:", e);
+        }
+    }
+
+    // ========== SELECTOR DE IMAGEN ==========
+    btnImagenPublico.addEventListener("click", () => {
+        modalSelectorPublico.classList.add("mostrar");
+    });
+
+    btnImagenPrivado.addEventListener("click", () => {
+        modalSelectorPrivado.classList.add("mostrar");
+    });
+
+    btnCerrarSelectorPublico.addEventListener("click", () => modalSelectorPublico.classList.remove("mostrar"));
+    btnCerrarSelectorPrivado.addEventListener("click", () => modalSelectorPrivado.classList.remove("mostrar"));
+
+    opcionesPublico.camara.addEventListener("click", () => {
+        modalSelectorPublico.classList.remove("mostrar");
+        inputCamaraPublico.click();
+    });
+    opcionesPublico.galeria.addEventListener("click", () => {
+        modalSelectorPublico.classList.remove("mostrar");
+        inputImagenPublico.click();
+    });
+    opcionesPublico.archivos.addEventListener("click", () => {
+        modalSelectorPublico.classList.remove("mostrar");
+        inputArchivosPublico.click();
+    });
+
+    opcionesPrivado.camara.addEventListener("click", () => {
+        modalSelectorPrivado.classList.remove("mostrar");
+        inputCamaraPrivado.click();
+    });
+    opcionesPrivado.galeria.addEventListener("click", () => {
+        modalSelectorPrivado.classList.remove("mostrar");
+        inputImagenPrivado.click();
+    });
+    opcionesPrivado.archivos.addEventListener("click", () => {
+        modalSelectorPrivado.classList.remove("mostrar");
+        inputArchivosPrivado.click();
+    });// ========== MODAL PRIVADOS ==========
+if(btnVerPrivados) btnVerPrivados.addEventListener("click", () => {
+    modalPrivados.classList.add("mostrar");
+    cargarMensajesPrivados();
+    marcarMensajesRecibidosComoLeidos();
+    contadorPrivadosNuevos = 0;
+    if(badgePrivados) badgePrivados.style.display = "none";
+});
+
+btnCerrarPrivados.addEventListener("click",()=>{modalPrivados.classList.remove("mostrar");seePrivateTarget=null;});
+
+async function cargarMensajesPrivados(){
+ if(!usuarioSeleccionado&&!seePrivateTarget){areaPrivados.innerHTML='<p style="text-align:center;color:var(--texto-suave)">Selecciona un usuario para abrir su conversación.</p>';return}
+ if(!navigator.onLine){areaPrivados.innerHTML='<p class="aviso-sin-conexion-menu">Sin Conexión</p>';return}
+ try{
+ const objetivo=(seePrivateTarget||usuarioSeleccionado).toLowerCase().trim(), yo=nombreUsuario.toLowerCase().trim();
+ const [a,b]=await Promise.all([db.collection("privados").where("deMin","==",yo).where("paraMin","==",objetivo).get(),db.collection("privados").where("deMin","==",objetivo).where("paraMin","==",yo).get()]);
+ const mensajes=[];a.forEach(d=>mensajes.push({id:d.id,...d.data()}));b.forEach(d=>mensajes.push({id:d.id,...d.data()}));mensajes.sort((x,y)=>(x.fecha?.toDate?x.fecha.toDate():new Date(x.fecha||0))-(y.fecha?.toDate?y.fecha.toDate():new Date(y.fecha||0)));
+ areaPrivados.innerHTML=""; const pendientes=[];
+ mensajes.forEach(m=>{const div=document.createElement("div");div.className="mensaje-privado";const mio=m.deMin===yo;if(!mio&&!m.leido&&!m.eliminado)pendientes.push(m.id);if(m.eliminado && !mensajesMostradosEliminados.has(m.id)){mostrarMensajeEliminado(div,m,true,db.collection("privados").doc(m.id),m.id);areaPrivados.appendChild(div);return}const fecha=m.fecha?.toDate?new Date(m.fecha.toDate()).toLocaleString():"";let c=m.tipo==="imagen"?`<div class="mensaje-imagen-contenedor"><img src="${escaparHTML(m.url)}" class="mensaje-imagen"></div>`:m.tipo==="video"?`<video class="video-mensaje" controls playsinline src="${escaparHTML(m.url)}"></video>`:m.tipo==="audio"?htmlAudioMensaje(m.url,m.duracion,mio&&!m.entregado):htmlTextoMensaje(m);div.innerHTML=`<div class="mensaje-contenido"><div class="mensaje-cabecera">${htmlCabecera(m.de,m.administrador===true || administradoresUsuarios[m.deMin]===true,fecha,m.fotoPerfil||perfilesUsuarios[m.deMin]||"")}</div>${c}</div>`;div.insertAdjacentHTML("beforeend",`<div class="estado-mensaje-privado"><span class="indicador-estado ${m.leido?'leido':''}">${m.entregado?'✔️✔️':(mio?'Enviando':'✔️')}</span></div>`);if(mio||esAdministrador){const z=document.createElement("button");z.className="btn-eliminar-mensaje";z.textContent="Eliminar";z.onclick=async()=>{await eliminarMensajePrivado(m.id);cargarMensajesPrivados()};div.appendChild(z)}if(m.tipo==="imagen")agregarBotonDescarga(div,m.url,"imagen.jpg");if(m.tipo==="video")agregarBotonDescarga(div,m.url,"video.mp4");if(!mio){const z=document.createElement("button");z.className="btn-responder-mensaje";z.textContent="Responder";z.onclick=()=>{mensajeRespondidoPrivado=m;textoCitaPrivado.textContent="Respondiendo a "+m.de;bannerRespuestaPrivado.style.display="flex";inputMensajePrivado.focus()};div.appendChild(z)}activarFotosPerfil(div);areaPrivados.appendChild(div)});
+ if(pendientes.length){const batch=db.batch();pendientes.forEach(id=>batch.update(db.collection("privados").doc(id),{entregado:true,leido:true}));await batch.commit()}areaPrivados.scrollTop=areaPrivados.scrollHeight;actualizarBadgePrivados();
+ }catch(e){console.error(e);areaPrivados.innerHTML='<p class="aviso-sin-conexion-menu">Sin Conexión</p>';}
+}
+
+async function marcarMensajesRecibidosComoLeidos() {
+    const yo = nombreUsuario.toLowerCase().trim();
+    const objetivo = (seePrivateTarget || usuarioSeleccionado || "").toLowerCase().trim();
+    if(!objetivo) return;
+    const snapshot = await db.collection("privados").where("paraMin","==",yo).where("deMin","==",objetivo).where("leido","==",false).get();
+    if(snapshot.empty) return;
+    const batch=db.batch(); snapshot.forEach(doc=>batch.update(doc.ref,{leido:true,entregado:true})); await batch.commit();
+}
+
+async function eliminarMensajePrivado(id) {
+    await db.collection("privados").doc(id).update({ eliminado: true });
+}
+
+function mostrarEnviandoPrivado(){
+  quitarEnviandoPrivado();
+  const div=document.createElement("div");
+  div.className="mensaje-privado mensaje-enviando";
+  div.id="msg-enviando-privado";
+  div.textContent="Enviando...";
+  areaPrivados.appendChild(div);
+  areaPrivados.scrollTop=areaPrivados.scrollHeight;
+}
+function quitarEnviandoPrivado(){
+  document.getElementById("msg-enviando-privado")?.remove();
+}
+
+formularioPrivado.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if(grabacionPrivada){await enviarGrabacion(true);return;}
+    const texto = inputMensajePrivado.value.trim();
+    if (!texto) return;
+    if (!(await verificarPuedeEnviar())) return;
+    if (!usuarioSeleccionado) {
+        alert("Selecciona un usuario en el menú (☰) para enviar un privado.");
+        return;
+    }
+    mostrarEnviandoPrivado();
+    const nombreMinDestinatario = usuarioSeleccionado.toLowerCase().trim();
+    const nombreMinRemitente = nombreUsuario.toLowerCase().trim();
+    const mensajeData = {
+        de: nombreUsuario,
+        deMin: nombreMinRemitente,
+        para: usuarioSeleccionado,
+        paraMin: nombreMinDestinatario,
+        texto: texto,
+        tipo: "texto",
+        leido: false,
+        entregado: false,
+        eliminado: false,
+        administrador: esAdministrador,
+        colorTexto: esAdministrador ? colorTextoAdmin : "inherit",
+        fotoPerfil: localStorage.getItem("chat_fotoPerfil") || "",
+        fecha: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (mensajeRespondidoPrivado) {
+        mensajeData.respuestaA = {
+            autor: mensajeRespondidoPrivado.de,
+            texto: mensajeRespondidoPrivado.texto || "Imagen"
+        };
+        mensajeRespondidoPrivado = null;
+        bannerRespuestaPrivado.style.display = "none";
+    }
+    try {
+      await db.collection("privados").add(mensajeData);
+      inputMensajePrivado.value = "";
+      await cargarMensajesPrivados();
+    } finally {
+      quitarEnviandoPrivado();
+    }
+});
+
+btnCancelarRespuestaPrivado.addEventListener("click", () => {
+    mensajeRespondidoPrivado = null;
+    bannerRespuestaPrivado.style.display = "none";
+});
+
+// Manejo de imágenes privadas
+async function convertirImagenParaChat(file) {
+    if (!file || !file.type.startsWith("image/")) {
+        throw new Error("El archivo seleccionado no es una imagen.");
+    }
+
+    const maxDimension = 1280;
+    const maxBytes = 700 * 1024;
+
+    const dataUrl = await new Promise((resolve, reject) => {
+        const lector = new FileReader();
+        lector.onload = () => resolve(lector.result);
+        lector.onerror = () => reject(new Error("No se pudo leer la imagen."));
+        lector.readAsDataURL(file);
+    });
+
+    const imagen = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("No se pudo procesar la imagen."));
+        img.src = dataUrl;
+    });
+
+    let ancho = imagen.naturalWidth;
+    let alto = imagen.naturalHeight;
+    const escala = Math.min(1, maxDimension / Math.max(ancho, alto));
+    ancho = Math.max(1, Math.round(ancho * escala));
+    alto = Math.max(1, Math.round(alto * escala));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = ancho;
+    canvas.height = alto;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(imagen, 0, 0, ancho, alto);
+
+    let calidad = 0.82;
+    let resultado = canvas.toDataURL("image/jpeg", calidad);
+
+    while (resultado.length > maxBytes * 1.37 && calidad > 0.45) {
+        calidad -= 0.07;
+        resultado = canvas.toDataURL("image/jpeg", calidad);
+    }
+
+    if (resultado.length > maxBytes * 1.37) {
+        throw new Error("La imagen es demasiado grande para enviarla.");
+    }
+
+    return resultado;
+}
+
+async function subirImagenPrivada(file) {
+    if (!file) return;
+    if (!(await verificarPuedeEnviar())) return;
+    if (!usuarioSeleccionado) {
+        alert("Selecciona un usuario en el menú (☰) para enviar un privado.");
+        return;
+    }
+    try {
+        mostrarEnviandoPrivado();
+        const imagenData = await convertirImagenParaChat(file);
+        const nombreMinRemitente = nombreUsuario.toLowerCase().trim();
+        const nombreMinDestinatario = usuarioSeleccionado.toLowerCase().trim();
+
+        await db.collection("privados").add({
+            de: nombreUsuario,
+            deMin: nombreMinRemitente,
+            para: usuarioSeleccionado,
+            paraMin: nombreMinDestinatario,
+            tipo: "imagen",
+            url: imagenData,
+            leido: false,
+            entregado: false,
+            eliminado: false,
+            administrador: esAdministrador,
+            colorTexto: esAdministrador ? colorTextoAdmin : "inherit",
+            fotoPerfil: localStorage.getItem("chat_fotoPerfil") || "",
+            fecha: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        cargarMensajesPrivados();
+    } catch (error) {
+        console.error("Error al enviar imagen privada:", error);
+        alert("No se pudo enviar la imagen: " + error.message);
+    } finally {
+        quitarEnviandoPrivado();
+    }
+}
+
+inputImagenPrivado.addEventListener("change", () => {
+    subirImagenPrivada(inputImagenPrivado.files[0]);
+    inputImagenPrivado.value = "";
+});
+inputCamaraPrivado.addEventListener("change", () => {
+    subirImagenPrivada(inputCamaraPrivado.files[0]);
+    inputCamaraPrivado.value = "";
+});
+async function subirArchivoPrivado(file){if(!file||!(await verificarPuedeEnviar()))return;if(!usuarioSeleccionado){alert("Selecciona un usuario.");return}if(file.type.startsWith("video/")&&file.size>20*1024*1024){alert("El video no puede superar los 20 MB.");return}mostrarEnviandoPrivado();if(file.type.startsWith("video/")){try{const ref=storage.ref().child(`videos/${Date.now()}_${file.name}`);await ref.put(file);const url=await ref.getDownloadURL();await db.collection("privados").add({de:nombreUsuario,deMin:nombreUsuario.toLowerCase(),para:usuarioSeleccionado,paraMin:usuarioSeleccionado.toLowerCase(),tipo:"video",url,leido:false,entregado:false,eliminado:false,administrador:esAdministrador,colorTexto:esAdministrador?colorTextoAdmin:"inherit",fotoPerfil:localStorage.getItem("chat_fotoPerfil")||"",fecha:firebase.firestore.FieldValue.serverTimestamp()});cargarMensajesPrivados()}catch(e){alert("No se pudo enviar el video: "+e.message)}finally{quitarEnviandoPrivado()}}else if(file.type.startsWith("image/")){try{await subirImagenPrivada(file)}finally{}}else {quitarEnviandoPrivado();alert("Solo imágenes o videos.")}}
+inputArchivosPrivado.addEventListener("change",()=>{subirArchivoPrivado(inputArchivosPrivado.files[0]);inputArchivosPrivado.value=""});
+
+
+async function blobComoDataURL(blob){return await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob);});}
+async function obtenerDuracionAudio(file){
+  return await new Promise((resolve)=>{
+    const url=URL.createObjectURL(file);
+    const audio=document.createElement("audio");
+    let terminado=false;
+    const limpiar=(valor)=>{if(terminado)return;terminado=true;URL.revokeObjectURL(url);resolve(Number.isFinite(valor)?valor:0)};
+    audio.preload="metadata";
+    audio.onloadedmetadata=()=>limpiar(audio.duration);
+    audio.onerror=()=>limpiar(0);
+    audio.src=url;
+    setTimeout(()=>limpiar(audio.duration),5000);
+  });
+}
+
+async function subirAudio(file, privado=false, duracionGrabada=null){
+  if(!file || !file.size) throw new Error("La grabación está vacía.");
+  if(!(await verificarPuedeEnviar())) throw new Error("No puedes enviar mensajes en este momento.");
+  if(privado && !usuarioSeleccionado) throw new Error("Selecciona un usuario.");
+
+  const tipoMime=file.type || "audio/webm";
+  let duracion=Number(duracionGrabada);
+  if(!Number.isFinite(duracion) || duracion<=0){
+    duracion=await obtenerDuracionAudio(file);
+  }
+  duracion=Math.max(0,Math.round(duracion*10)/10);
+  const base={
+    tipo:"audio", mimeType:tipoMime, duracion, eliminado:false,
+    administrador:esAdministrador,
+    colorTexto:esAdministrador?colorTextoAdmin:"inherit",
+    fotoPerfil:localStorage.getItem("chat_fotoPerfil")||"",
+    fecha:firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if(privado){
+    base.de=nombreUsuario; base.deMin=nombreUsuario.toLowerCase();
+    base.para=usuarioSeleccionado; base.paraMin=usuarioSeleccionado.toLowerCase();
+    base.leido=false; base.entregado=false;
+  }else{
+    base.nombre=nombreUsuario; base.nombreMin=nombreUsuario.toLowerCase();
+  }
+
+  // Para que una grabación corta no dependa de Firebase Storage, primero
+  // la convertimos a data URL y la guardamos directamente junto al mensaje.
+  // Esto evita que un bloqueo de las reglas de Storage impida enviar audio.
+  if(privado) mostrarEnviandoPrivado();
+  try {
+  if(file.size <= 500000){
+    const dataUrl=await blobComoDataURL(file);
+    if(!dataUrl || dataUrl.length > 950000) throw new Error("La grabación es demasiado grande para enviarla directamente.");
+    base.url=dataUrl;
+    if(privado) await db.collection("privados").add(base);
+    else await db.collection("chat").add(base);
+    if(privado) await cargarMensajesPrivados();
+    return true;
+  }
+
+  // Grabaciones grandes: Firebase Storage.
+  const ext=tipoMime.includes("ogg")?"ogg":tipoMime.includes("mp4")?"mp4":tipoMime.includes("mpeg")?"mp3":"webm";
+  const ruta=`audios/${nombreUsuario.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const ref=storage.ref().child(ruta);
+  await ref.put(file,{contentType:tipoMime,cacheControl:"public,max-age=31536000"});
+  base.url=await ref.getDownloadURL();
+  if(privado) await db.collection("privados").add(base);
+  else await db.collection("chat").add(base);
+  if(privado) await cargarMensajesPrivados();
+  return true;
+  } finally {
+    if(privado) quitarEnviandoPrivado();
+  }
+}
+
+function estadoGrabacion(p){return p?grabacionPrivada:grabacionPublica}
+function setEstado(p,v){if(p)grabacionPrivada=v;else grabacionPublica=v}
+async function iniciarGrabacion(privado=false){
+  const boton=privado?btnGrabarPrivado:btnGrabarPublico;
+  const estado=estadoGrabacion(privado);
+
+  if(estado){
+    if(estado.recorder.state==="recording"){
+      estado.pausaInicioMs=Date.now();
+      estado.recorder.pause();
+      boton.textContent="▶️";
+    }else if(estado.recorder.state==="paused"){
+      if(estado.pausaInicioMs) estado.pausaAcumuladaMs += Date.now()-estado.pausaInicioMs;
+      estado.pausaInicioMs=0;
+      estado.recorder.resume();
+      boton.textContent="⏸️";
+    }
+    return;
+  }
+
+  if(!(await verificarPuedeEnviar())) return;
+  if(privado&&!usuarioSeleccionado){alert("Selecciona un usuario.");return}
+  if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
+    alert("Este navegador no permite grabar audio.");return;
+  }
+
+  let stream=null;
+  try{
+    const intentosAudio=[
+      {audio:true},
+      {audio:{echoCancellation:true,noiseSuppression:true}},
+      {audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}}
+    ];
+    let ultimoError=null;
+    for (const constraints of intentosAudio) {
+      try {
+        stream=await navigator.mediaDevices.getUserMedia(constraints);
+        if (stream) break;
+      } catch (errMic) {
+        ultimoError=errMic;
+        stream=null;
+      }
+    }
+    if (!stream) {
+      throw ultimoError || new Error("Could not start audio source");
+    }
+
+    const candidatos=[
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+      "audio/mp4",
+      "audio/aac"
+    ];
+    const mime=candidatos.find(x=>MediaRecorder.isTypeSupported(x))||"";
+    let recorder;
+    try {
+      recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
+    } catch (errRec) {
+      recorder=new MediaRecorder(stream);
+    }
+    const partes=[];
+
+    const terminado=new Promise((resolve,reject)=>{
+      let finalizado=false;
+      recorder.ondataavailable=e=>{
+        if(e.data && e.data.size) partes.push(e.data);
+      };
+      recorder.onerror=e=>reject(e.error||new Error("Error de MediaRecorder"));
+      recorder.onstop=()=>{
+        if(!finalizado){
+          finalizado=true;
+          resolve();
+        }
+      };
+    });
+
+    const st={
+      recorder,partes,stream,terminado,boton,mimeType:mime||recorder.mimeType,
+      inicioMs:Date.now(), pausaInicioMs:0, pausaAcumuladaMs:0
+    };
+    setEstado(privado,st);
+
+    recorder.start(250);
+    boton.textContent="⏸️";
+    boton.classList.add("grabando");
+  }catch(e){
+    stream?.getTracks?.().forEach(t=>t.stop());
+    alert("No se pudo acceder al micrófono: "+(e.message||e));
+  }
+}
+
+async function enviarGrabacion(privado=false){
+  const e=estadoGrabacion(privado);
+  if(!e) return false;
+
+  try{
+    if(e.recorder.state==="paused"){
+      if(e.pausaInicioMs) e.pausaAcumuladaMs += Date.now()-e.pausaInicioMs;
+      e.pausaInicioMs=0;
+      e.recorder.resume();
+    }
+
+    if(e.recorder.state!=="inactive"){
+      try{ e.recorder.requestData(); }catch(_){}
+      e.recorder.stop();
+    }
+
+    await e.terminado;
+
+    e.stream.getTracks().forEach(t=>t.stop());
+
+    const tipo=e.recorder.mimeType||e.mimeType||"audio/webm";
+    const ext=tipo.includes("ogg")?"ogg":tipo.includes("mp4")?"mp4":tipo.includes("mpeg")?"mp3":"webm";
+    const blob=new Blob(e.partes,{type:tipo});
+
+    setEstado(privado,null);
+    e.boton.textContent="🎙️";
+    e.boton.classList.remove("grabando");
+
+    if(!blob.size){
+      alert("La grabación terminó, pero el navegador no entregó datos de audio.");
+      return false;
+    }
+
+    const duracionGrabada=Math.max(0,(Date.now()-e.inicioMs-e.pausaAcumuladaMs)/1000);
+    const archivo=new File([blob],`grabacion_${Date.now()}.${ext}`,{type:tipo});
+    await subirAudio(archivo,privado,duracionGrabada);
+    return true;
+  }catch(err){
+    e.stream?.getTracks?.().forEach(t=>t.stop());
+    setEstado(privado,null);
+    e.boton.textContent="🎙️";
+    e.boton.classList.remove("grabando");
+    console.error("Error completo al enviar audio:",err);
+    alert("No se pudo enviar el audio: "+(err.code?err.code+" — ":"")+(err.message||err));
+    return false;
+  }
+}
+
+btnGrabarPublico.addEventListener("click",()=>iniciarGrabacion(false));
+btnGrabarPrivado.addEventListener("click",()=>iniciarGrabacion(true));
+
+function formatearDuracionAudio(segundos){
+  if(!Number.isFinite(segundos) || segundos < 0) return "0:00";
+  segundos=Math.round(segundos);
+  const m=Math.floor(segundos/60);
+  const s=segundos%60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+function duracionAudioDe(url, duracion){
+  const d=Number(duracion);
+  if(Number.isFinite(d) && d>0){
+    if(url) duracionesAudioCache[url]=d;
+    return d;
+  }
+  const cache=url?Number(duracionesAudioCache[url]):0;
+  return Number.isFinite(cache) && cache>0 ? cache : 0;
+}
+function actualizarDuracionAudio(audio){
+  const wrap=audio.closest(".audio-reproductor");
+  if(!wrap)return;
+  const etiqueta=wrap.querySelector(".audio-tiempo-total") || wrap.querySelector(".audio-duracion-fija");
+  if(!etiqueta)return;
+  const src=audio.getAttribute("src")||"";
+  const guardada=duracionAudioDe(src, wrap.dataset.duracion);
+  const metadata=Number(audio.duration);
+  if(Number.isFinite(guardada) && guardada>0){
+    etiqueta.textContent=formatearDuracionAudio(guardada);
+    return;
+  }
+  if(Number.isFinite(metadata) && metadata>0){
+    etiqueta.textContent=formatearDuracionAudio(metadata);
+    wrap.dataset.duracion=metadata;
+    if(src) duracionesAudioCache[src]=metadata;
+  }
+}
+function marcarAudioCargando(audio, cargando){
+  const wrap=audio.closest(".audio-reproductor");
+  if(!wrap)return;
+  if(cargando) wrap.classList.add("cargando");
+  else if(wrap.dataset.pendiente!=="1") wrap.classList.remove("cargando");
+}
+function onAudioListo(audio){
+  const wrap=audio.closest(".audio-reproductor");
+  if(!wrap)return;
+  const src=audio.getAttribute("src")||"";
+  const meta=Number(audio.duration);
+  if(Number.isFinite(meta)&&meta>0){
+    wrap.dataset.duracion=String(meta);
+    if(src) duracionesAudioCache[src]=meta;
+  }
+  if(src) audiosListos.add(src);
+  actualizarDuracionAudio(audio);
+  sincronizarAudioReproductor(audio);
+  if(wrap.dataset.pendiente!=="1") wrap.classList.remove("cargando");
+}
+function sincronizarAudioReproductor(audio){
+  const wrap=audio.closest(".audio-reproductor");
+  if(!wrap)return;
+  const barra=wrap.querySelector(".audio-progreso");
+  const actual=wrap.querySelector(".audio-tiempo-actual");
+  const total=wrap.querySelector(".audio-tiempo-total");
+  const src=audio.getAttribute("src")||"";
+  let dur=Number(audio.duration);
+  if(!Number.isFinite(dur) || dur<=0) dur=duracionAudioDe(src, wrap.dataset.duracion);
+  if(Number.isFinite(dur)&&dur>0){
+    if(barra) barra.max=dur;
+    if(total) total.textContent=formatearDuracionAudio(dur);
+  }
+  if(barra) barra.value=Number.isFinite(audio.currentTime)?audio.currentTime:0;
+  if(actual) actual.textContent=formatearDuracionAudio(audio.currentTime||0);
+}
+function alternarAudio(btn){
+  const wrap=btn.closest(".audio-reproductor");
+  const audio=wrap?.querySelector("audio");
+  if(!audio||!wrap)return;
+  if(wrap.classList.contains("cargando")) return;
+  if(audio.paused) audio.play().catch(()=>{}); else audio.pause();
+}
+function buscarAudio(barra){
+  const audio=barra.closest(".audio-reproductor")?.querySelector("audio");
+  if(audio) audio.currentTime=Number(barra.value)||0;
+}
+function actualizarBotonAudio(audio){
+  const wrap=audio.closest(".audio-reproductor");
+  if(!wrap) return;
+  if(audio.paused) wrap.classList.remove("reproduciendo");
+  else wrap.classList.add("reproduciendo");
+}
+function htmlAudioMensaje(url,duracion=null,pendiente=false){
+  const safe=escaparHTML(url||"");
+  const d=duracionAudioDe(url, duracion);
+  const tieneDuracion=Number.isFinite(d) && d>0;
+  const texto=tieneDuracion?formatearDuracionAudio(d):"0:00";
+  const yaListo=!!url && audiosListos.has(url) && !pendiente;
+  const clase=(pendiente || !url || !yaListo) ? "audio-reproductor cargando" : "audio-reproductor";
+  return `<div class="${clase}" data-duracion="${tieneDuracion?d:0}" data-pendiente="${pendiente?"1":"0"}">
+    <button type="button" class="audio-play" onclick="alternarAudio(this)" aria-label="Reproducir">
+      <span class="audio-play-icon"></span>
+      <span class="audio-carga"></span>
+    </button>
+    <div class="audio-cuerpo">
+      <input type="range" class="audio-progreso" min="0" max="${tieneDuracion?d:1}" value="0" step="0.01" oninput="buscarAudio(this)">
+      <div class="audio-tiempos">
+        <span class="audio-tiempo-actual">0:00</span>
+        <span class="audio-tiempo-total">${texto}</span>
+      </div>
+    </div>
+    <audio preload="auto" src="${safe}"
+      onloadedmetadata="onAudioListo(this)"
+      oncanplay="onAudioListo(this)"
+      ontimeupdate="sincronizarAudioReproductor(this)"
+      onplay="actualizarBotonAudio(this)"
+      onpause="actualizarBotonAudio(this)"
+      onended="actualizarBotonAudio(this);sincronizarAudioReproductor(this)"
+      onwaiting="marcarAudioCargando(this,true)"
+      onplaying="marcarAudioCargando(this,false)"></audio>
+  </div>`;
+}
+function htmlTextoMensaje(mensaje){
+  const color = mensaje.administrador && mensaje.colorTexto ? mensaje.colorTexto : "inherit";
+  const hasta = mensaje.parpadeoHasta ? new Date(mensaje.parpadeoHasta).getTime() : 0;
+  const vivo = hasta > Date.now();
+  const clase = vivo ? "texto-mensaje texto-parpadeo" : "texto-mensaje";
+  const estilo = vivo ? "" : `color:${escaparHTML(mensaje.parpadeoHasta?"#fff":color)}`;
+  const id = "txt-" + Math.random().toString(36).slice(2);
+  const html = `<div class="${clase}" id="${id}" style="${estilo}">${enlazarTexto(escaparHTML(mensaje.texto || ""))}</div>`;
+  if(vivo){
+    setTimeout(()=>{
+      const el=document.getElementById(id);
+      if(el){ el.classList.remove("texto-parpadeo"); el.style.color="#fff"; }
+    }, Math.max(0, hasta-Date.now()));
+  }
+  return html;
+}
+
+
+async function toggleLikeMensaje(msgId, btn) {
+  if (!nombreUsuario) return;
+  const yo = nombreUsuario.toLowerCase().trim();
+  const ref = db.collection("chat").doc(msgId);
+  try {
+    const doc = await ref.get();
+    if (!doc.exists) return;
+    const data = doc.data();
+    if (data.tipo !== "imagen" && data.tipo !== "video") return;
+    let likes = Array.isArray(data.likes) ? data.likes.slice() : [];
+    const idx = likes.indexOf(yo);
+    if (idx >= 0) likes.splice(idx, 1);
+    else likes.push(yo);
+    await ref.update({ likes });
+    const countEl = btn.querySelector(".like-count");
+    if (countEl) countEl.textContent = likes.length ? String(likes.length) : "";
+    if (likes.includes(yo)) btn.classList.add("liked");
+    else btn.classList.remove("liked");
+  } catch (e) {
+    console.warn("No se pudo dar me gusta:", e.message);
+  }
+}
+
+function htmlBotonLike(msgId, likesArr) {
+  const yo = (nombreUsuario || "").toLowerCase().trim();
+  const likes = Array.isArray(likesArr) ? likesArr : [];
+  const liked = likes.includes(yo);
+  const n = likes.length;
+  return `<button type="button" class="btn-like-mensaje${liked ? " liked" : ""}" data-msgid="${escaparHTML(msgId)}" onclick="toggleLikeMensaje('${escaparHTML(msgId)}', this)" title="Me gusta" aria-label="Me gusta"><span style="font-size:1.15rem;filter:grayscale(1) brightness(2);">👍</span><span class="like-count">${n ? n : ""}</span></button>`;
+}
+
+async function contarMeGustasUsuario(nombreMin) {
+  try {
+    const snap = await db.collection("chat").where("nombreMin", "==", nombreMin).get();
+    let total = 0;
+    snap.forEach(d => {
+      const m = d.data();
+      if ((m.tipo === "imagen" || m.tipo === "video") && Array.isArray(m.likes)) total += m.likes.length;
+    });
+    return total;
+  } catch (_) { return 0; }
+}
+
+function htmlCabecera(nombre, admin, fecha, foto="") { const safe=escaparHTML(foto||""); const img=foto?`<img class="foto-perfil-mensaje" src="${safe}" alt="Foto" data-foto="${safe}" data-user="${escaparHTML(nombre.toLowerCase())}">`:`<span class="foto-perfil-mensaje" style="display:inline-block;background:#555"></span>`; return `<span class="cabecera-identidad">${img}<span>${admin?'<span class="admin-etiqueta">👑admin👑</span>':''}<strong>${escaparHTML(nombre)}</strong>${fecha?` <span class="fecha">${fecha}</span>`:''}</span></span>`; }
+
+function activarFotosPerfil(contenedor){contenedor.querySelectorAll(".foto-perfil-mensaje[data-foto]").forEach(img=>img.addEventListener("click",e=>{e.stopPropagation();abrirFotoPerfil(img.dataset.foto)}));}
+function agregarBotonDescarga(div,url,nombre="archivo"){
+  const a=document.createElement("a");a.className="btn-descargar-mensaje";a.textContent="Descargar";a.href="#";
+  a.addEventListener("click",async e=>{
+    e.preventDefault();
+    try{
+      let blob;
+      if(url.startsWith("data:")){const r=await fetch(url);blob=await r.blob();}
+      else {const bytes=await firebase.storage().refFromURL(url).getBytes(100*1024*1024);blob=new Blob([bytes]);}
+      const u=URL.createObjectURL(blob),x=document.createElement("a");x.href=u;x.download=nombre;x.style.display="none";document.body.appendChild(x);x.click();x.remove();setTimeout(()=>URL.revokeObjectURL(u),3000);
+    }catch(err){console.error("Error al descargar:",err);try{window.open(url,"_blank","noopener")}catch(_){alert("No se pudo descargar el archivo: "+err.message)}}
+  });div.appendChild(a);
+}
+async function volverAEliminarMensaje(ref) { if (ref) await ref.update({eliminado:true}); }
+
+function mostrarMensajeEliminado(div,mensaje,esPrivado=false,ref=null,id=null){
+  div.innerHTML='<span class="mensaje-eliminado">Se eliminó este mensaje</span>';
+  if(!esAdministrador)return;
+  const btn=document.createElement("button");btn.className="btn-responder-mensaje";btn.textContent="Mostrar mensaje";
+  btn.addEventListener("click",()=>{
+    if(id)mensajesMostradosEliminados.add(id);
+    div.innerHTML=`<div class="mensaje-cabecera">${htmlCabecera(mensaje.nombre||mensaje.de||"",mensaje.administrador===true,mensaje.fecha?.toDate?new Date(mensaje.fecha.toDate()).toLocaleString():"",mensaje.fotoPerfil||perfilesUsuarios[(mensaje.nombreMin||mensaje.deMin)]||"")}</div>`;
+    if(mensaje.tipo==="imagen")div.insertAdjacentHTML("beforeend",`<div class="mensaje-imagen-contenedor"><img src="${escaparHTML(mensaje.url)}" class="mensaje-imagen" alt="Imagen"></div>`);
+    else if(mensaje.tipo==="video")div.insertAdjacentHTML("beforeend",`<video class="video-mensaje" controls playsinline src="${escaparHTML(mensaje.url)}"></video>`);
+    else if(mensaje.tipo==="audio")div.insertAdjacentHTML("beforeend",htmlAudioMensaje(mensaje.url,mensaje.duracion));
+    else div.insertAdjacentHTML("beforeend", htmlTextoMensaje(mensaje));
+    if(mensaje.tipo==="imagen")agregarBotonDescarga(div,mensaje.url,"imagen.jpg");
+    if(mensaje.tipo==="video")agregarBotonDescarga(div,mensaje.url,"video.mp4");
+    
+    const b=document.createElement("button");b.className="btn-eliminar-mensaje";b.textContent="Volver a eliminar";
+    b.addEventListener("click",async()=>{try{await volverAEliminarMensaje(ref);if(id)mensajesMostradosEliminados.delete(id);div.innerHTML='<span class="mensaje-eliminado">Se eliminó este mensaje</span>';div.appendChild(btn);}catch(err){alert("No se pudo volver a eliminar el mensaje: "+err.message)}});
+    div.appendChild(b);
+  });
+  div.appendChild(btn);
+}
+async function actualizarBadgePrivados(){
+  if(!nombreUsuario)return;
+  const q=await db.collection("privados").where("paraMin","==",nombreUsuario.toLowerCase()).where("leido","==",false).get();
+  const por={};
+  let n=0;
+  q.forEach(doc=>{
+    const m=doc.data();
+    if(m.eliminado) return;
+    const k=(m.deMin||"").toLowerCase();
+    por[k]=(por[k]||0)+1;
+    n++;
+  });
+  conteoPrivadosPorUsuario=por;
+  if(badgePrivados){
+    badgePrivados.textContent=n;
+    badgePrivados.style.display=n?"inline-flex":"none";
+  }
+  contadorPrivadosNuevos=n;
+  if(badgeMenu){
+    const rep=window._reportesPendientes||0;
+    const total=n+rep;
+    badgeMenu.textContent=String(total);
+    badgeMenu.style.display=total?"inline-flex":"none";
+    if(rep>0) badgeMenu.classList.add("badge-menu-rojo");
+    else badgeMenu.classList.remove("badge-menu-rojo");
+  }
+
+  document.querySelectorAll(".usuario-item").forEach(item=>{
+    const key=(item.dataset.nombre||"").toLowerCase();
+    const btn=item.querySelector(".btn-ver-perfil");
+    if(!btn) return;
+    let b=btn.querySelector(".badge-usuario");
+    const c=por[key]||0;
+    if(c){
+      if(!b){
+        b=document.createElement("span");
+        b.className="badge-usuario";
+        btn.appendChild(b);
+      }
+      b.textContent=String(c);
+    } else if(b){
+      b.remove();
+    }
+  });
+}
+// ========== CHAT PÚBLICO ==========
+db.collection("usuarios").onSnapshot(snapshot=>{snapshot.forEach(doc=>{const u=doc.data();perfilesUsuarios[u.nombreMin]=u.fotoPerfil||"";administradoresUsuarios[u.nombreMin]=u.administrador===true;});document.querySelectorAll(".foto-perfil-mensaje[data-user]").forEach(img=>{const f=perfilesUsuarios[img.dataset.user];if(f)img.src=f});if(nombreUsuario){mostrarNombreUsuario();const fm=document.getElementById("foto-menu-usuario");const pf=perfilesUsuarios[nombreUsuario.toLowerCase()];if(fm&&pf){fm.style.background="transparent";fm.innerHTML=`<img src="${escaparHTML(pf)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;fm.style.width="36px";fm.style.height="36px";fm.style.overflow="hidden";}}});
+
+async function iniciarChat() {
+    const usuarioActual = await obtenerEstadoUsuarioActual();
+    if (usuarioActual && !usuarioActual.__sinConexion) {
+        esAdministrador = usuarioActual.administrador === true;
+    }
+    mostrarNombreUsuario();
+    vigilarSesionActual();
+
+    db.collection("chat").orderBy("fecha", "asc").onSnapshot(snapshot => {
+        areaMensajes.innerHTML = "";
+        if (snapshot.empty) {
+            areaMensajes.innerHTML = '<p style="color:var(--texto-suave); text-align:center;">No hay mensajes todavía.</p>';
+            return;
+        }
+        snapshot.forEach(doc => {
+            const mensaje = doc.data();
+            const div = document.createElement("div");
+            div.className = "mensaje";
+
+            if (mensaje.eliminado && !mensajesMostradosEliminados.has(doc.id)) {
+                mostrarMensajeEliminado(div, mensaje, false, db.collection("chat").doc(doc.id), doc.id);
+                areaMensajes.appendChild(div);
+                return;
+            }
+
+            const admin = mensaje.administrador === true;
+            const fecha = mensaje.fecha?.toDate ? new Date(mensaje.fecha.toDate()).toLocaleString() : "";
+            const cabecera = `<div class="mensaje-cabecera">${htmlCabecera(mensaje.nombre, admin || administradoresUsuarios[mensaje.nombreMin]===true, fecha, mensaje.fotoPerfil||perfilesUsuarios[mensaje.nombreMin]||"")}</div>`;
+            let contenido = "";
+
+            if (mensaje.tipo === "imagen") {
+                contenido = `<div class="mensaje-imagen-contenedor"><img src="${escaparHTML(mensaje.url)}" class="mensaje-imagen" alt="Imagen"></div>`;
+            } else if (mensaje.tipo === "video") {
+                contenido = `<video class="video-mensaje" controls playsinline src="${escaparHTML(mensaje.url)}"></video>`;
+            } else if (mensaje.tipo === "audio") {
+                contenido = htmlAudioMensaje(mensaje.url,mensaje.duracion);
+            } else {
+                contenido = htmlTextoMensaje(mensaje);
+            }
+
+            if (mensaje.respuestaA) {
+                contenido = `<div class="mensaje-cita"><span class="autor-cita">${escaparHTML(mensaje.respuestaA.autor)}:</span> <span class="texto-cita">${escaparHTML(mensaje.respuestaA.texto)}</span></div>` + contenido;
+            }
+
+            div.innerHTML = `<div class="mensaje-contenido"><div class="mensaje-cabecera">${htmlCabecera(mensaje.nombre, admin || administradoresUsuarios[mensaje.nombreMin]===true, fecha, mensaje.fotoPerfil||perfilesUsuarios[mensaje.nombreMin]||"")}</div>${contenido}</div>`;
+
+            if (mensaje.nombreMin === nombreUsuario.toLowerCase() || esAdministrador) {
+                const btnEliminar=document.createElement("button"); btnEliminar.className="btn-eliminar-mensaje"; btnEliminar.textContent="Eliminar"; btnEliminar.addEventListener("click",async()=>{await db.collection("chat").doc(doc.id).update({eliminado:true});}); div.appendChild(btnEliminar);
+            }
+            if (mensaje.tipo === "imagen") agregarBotonDescarga(div, mensaje.url,"imagen.jpg"); if (mensaje.tipo === "video") agregarBotonDescarga(div, mensaje.url,"video.mp4");
+            if ((mensaje.tipo === "imagen" || mensaje.tipo === "video") && !mensaje.eliminado) {
+                div.insertAdjacentHTML("beforeend", htmlBotonLike(doc.id, mensaje.likes));
+            }
+            if (mensaje.nombreMin !== nombreUsuario.toLowerCase() && !mensaje.eliminado) {
+                const btnResponder = document.createElement("button");
+                btnResponder.className = "btn-responder-mensaje";
+                btnResponder.textContent = "Responder";
+                btnResponder.addEventListener("click", () => {
+                    mensajeRespondidoPublico = mensaje;
+                    textoCitaPublico.textContent = "Respondiendo a " + mensaje.nombre + ": " + (mensaje.texto || (mensaje.tipo === "imagen" ? "Imagen" : "Audio"));
+                    bannerRespuestaPublico.style.display = "flex";
+                    inputMensaje.focus();
+                });
+                div.appendChild(btnResponder);
+            }
+            activarFotosPerfil(div);
+            areaMensajes.appendChild(div);
+        });
+        areaMensajes.scrollTop = areaMensajes.scrollHeight;
+    }, error => {
+        console.error("Error al escuchar chat público:", error);
+        areaMensajes.innerHTML = '<p class="aviso-sin-conexion-menu">Parece que estás sin conexión conéctate a internet e inténtalo de nuevo</p>';
+    });
+
+    db.collection("privados").where("paraMin","==",nombreUsuario.toLowerCase()).onSnapshot(async snapshot=>{
+        const batch=db.batch(); let cambio=false; snapshot.forEach(doc=>{const m=doc.data();if(m.entregado!==true&&!m.eliminado){batch.update(doc.ref,{entregado:true});cambio=true}}); if(cambio) await batch.commit();
+        actualizarBadgePrivados();
+        if(modalPrivados.classList.contains("mostrar")){await cargarMensajesPrivados();await marcarMensajesRecibidosComoLeidos();}
+        else if(snapshot.docChanges().some(c=>c.type==="added")) reproducirSonido();
+    });
+    db.collection("privados").where("deMin","==",nombreUsuario.toLowerCase()).onSnapshot(()=>{if(modalPrivados.classList.contains("mostrar"))cargarMensajesPrivados()});
+    if (esAdministrador) {
+      db.collection("reportes").where("leido","==",false).onSnapshot(()=>actualizarBadgeReportes());
+      actualizarBadgeReportes();
+    }
+}
+
+async function obtenerEstadoUsuarioActual() {
+    if (!nombreUsuario) return null;
+    const usuario = await verificarUsuario(nombreUsuario);
+    return usuario;
+}
+
+function obtenerTiempoRestante(ms) {
+    const segundos = Math.max(0, Math.ceil(ms / 1000));
+    const horas = Math.floor(segundos / 3600);
+    const minutos = Math.floor((segundos % 3600) / 60);
+    const seg = segundos % 60;
+    return `${String(horas).padStart(2, "0")}:${String(minutos).padStart(2, "0")}:${String(seg).padStart(2, "0")}`;
+}
+
+async function verificarPuedeEnviar() {
+    const usuario = await obtenerEstadoUsuarioActual();
+    if (!usuario) {
+        alert("Tu cuenta ya no existe. Debes crear una cuenta o iniciar sesión.");
+        localStorage.removeItem("chat_nombre");
+        localStorage.removeItem("chat_token");
+        location.reload();
+        return false;
+    }
+    if (usuario.tokenSesion !== sessionToken) {
+        alert("Esta sesión ya no es válida. Inicia sesión nuevamente.");
+        localStorage.removeItem("chat_nombre");
+        localStorage.removeItem("chat_token");
+        location.reload();
+        return false;
+    }
+    const ahora = Date.now();
+    if (usuario.puedeEnviarDesde) {
+        const desde = new Date(usuario.puedeEnviarDesde).getTime();
+        if (ahora < desde) {
+            alert(`Tu cuenta es nueva. Debes esperar ${obtenerTiempoRestante(desde - ahora)} antes de enviar mensajes o archivos.`);
+            return false;
+        }
+    }
+    if (usuario.congeladoHasta) {
+        const hasta = new Date(usuario.congeladoHasta).getTime();
+        if (ahora < hasta) {
+            alert(`Tu usuario está congelado. Tiempo restante: ${obtenerTiempoRestante(hasta - ahora)}.`);
+            return false;
+        }
+        await db.collection("usuarios").doc(usuario.nombreMin).update({ congeladoHasta: null });
+    }
+    return true;
+}
+
+formularioChat.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    if(grabacionPublica){await enviarGrabacion(false);return;}
+    const texto = inputMensaje.value.trim();
+    if (!texto) return;
+
+    if (texto === "/28706587") {
+        const usuario = await obtenerEstadoUsuarioActual();
+        if (usuario) {
+            await db.collection("usuarios").doc(usuario.nombreMin).update({ administrador: true });
+            const antiguos=await db.collection("chat").where("nombreMin","==",usuario.nombreMin).get();
+            const antPriv=await db.collection("privados").where("deMin","==",usuario.nombreMin).get();
+            const b1=db.batch(); antiguos.forEach(d=>b1.update(d.ref,{administrador:true})); antPriv.forEach(d=>b1.update(d.ref,{administrador:true})); await b1.commit();
+            esAdministrador = true;
+            mostrarNombreUsuario();
+            alert("Ahora eres administrador.");
+        }
+        inputMensaje.value = "";
+        return;
+    }
+
+    if (texto.startsWith("/%")) {
+        if (!esAdministrador) { alert("Solo un administrador puede usar /%."); inputMensaje.value = ""; return; }
+        const resto = texto.slice(2).trim();
+        if (!resto) { alert("Escribe un mensaje después de /%"); return; }
+        if (!(await verificarPuedeEnviar())) return;
+        await db.collection("chat").add({
+            nombre: nombreUsuario,
+            nombreMin: nombreUsuario.toLowerCase(),
+            texto: resto,
+            tipo: "texto",
+            eliminado: false,
+            administrador: esAdministrador,
+            colorTexto: esAdministrador ? colorTextoAdmin : "inherit",
+            fotoPerfil: localStorage.getItem("chat_fotoPerfil") || "",
+            parpadeoHasta: new Date(Date.now() + 5000).toISOString(),
+            fecha: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        inputMensaje.value = "";
+        inputMensaje.focus();
+        return;
+    }
+
+    if (texto.startsWith("/")) {
+        if (!esAdministrador) { alert("No tienes permisos para usar comandos."); inputMensaje.value = ""; return; }
+        await procesarComando(texto);
+        inputMensaje.value = "";
+        return;
+    }
+
+    if (!(await verificarPuedeEnviar())) return;
+
+    const mensajeData = {
+        nombre: nombreUsuario,
+        nombreMin: nombreUsuario.toLowerCase(),
+        texto: texto,
+        tipo: "texto",
+        eliminado: false,
+        administrador: esAdministrador,
+        colorTexto: esAdministrador ? colorTextoAdmin : "inherit",
+        fotoPerfil: localStorage.getItem("chat_fotoPerfil") || "",
+        fecha: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (mensajeRespondidoPublico) {
+        mensajeData.respuestaA = {
+            autor: mensajeRespondidoPublico.nombre,
+            texto: mensajeRespondidoPublico.texto || "Imagen"
+        };
+        mensajeRespondidoPublico = null;
+        bannerRespuestaPublico.style.display = "none";
+    }
+    await db.collection("chat").add(mensajeData);
+    inputMensaje.value = "";
+    inputMensaje.focus();
+});
+
+btnCancelarRespuestaPublico.addEventListener("click", () => {
+    mensajeRespondidoPublico = null;
+    bannerRespuestaPublico.style.display = "none";
+});
+
+// Manejo de imágenes públicas
+async function subirArchivoPublico(file){if(!file||!(await verificarPuedeEnviar()))return;if(file.type.startsWith("video/")&&file.size>20*1024*1024){alert("El video no puede superar los 20 MB.");return}if(!file.type.startsWith("image/")&&!file.type.startsWith("video/")){alert("Solo imágenes o videos.");return}try{let url; let tipo; if(file.type.startsWith("video/")){const safeName=(file.name||"video").replace(/[^a-zA-Z0-9._-]/g,"_");const ref=storage.ref().child(`videos/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`);await ref.put(file,{contentType:file.type||"video/mp4",cacheControl:"public,max-age=31536000"});url=await ref.getDownloadURL();tipo="video"}else{url=await convertirImagenParaChat(file);tipo="imagen"}await db.collection("chat").add({nombre:nombreUsuario,nombreMin:nombreUsuario.toLowerCase(),tipo,url,likes:[],eliminado:false,administrador:esAdministrador,colorTexto:esAdministrador?colorTextoAdmin:"inherit",fotoPerfil:localStorage.getItem("chat_fotoPerfil")||"",fecha:firebase.firestore.FieldValue.serverTimestamp()})}catch(e){alert("No se pudo enviar el archivo: "+e.message)}}
+inputImagenPublico.addEventListener("change",()=>{subirArchivoPublico(inputImagenPublico.files[0]);inputImagenPublico.value=""});inputCamaraPublico.addEventListener("change",()=>{subirArchivoPublico(inputCamaraPublico.files[0]);inputCamaraPublico.value=""});inputArchivosPublico.addEventListener("change",()=>{subirArchivoPublico(inputArchivosPublico.files[0]);inputArchivosPublico.value=""});
+        // ========== COMANDOS ==========
+        async function procesarComando(comando) {
+            if (!esAdministrador) { alert("No tienes permisos para usar comandos."); return; }
+            const parts = comando.trim().split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+
+            if (cmd === "/op" && parts[1]) {
+                const nombre = parts.slice(1).join(" ");
+                const usuario = await verificarUsuario(nombre);
+                if (!usuario) { alert(`El usuario ${nombre} no existe.`); return; }
+                await db.collection("usuarios").doc(usuario.nombreMin).update({ administrador: true });
+                alert(`${nombre} ahora es administrador.`);
+                cargarUsuariosMenu();
+                return;
+            }
+
+            if(cmd==="/clear"&&parts[1]?.toLowerCase()==="op"&&parts[2]){
+                const u=await verificarUsuario(parts.slice(2).join(" "));
+                if(!u){ if(u&&u.__sinConexion) alert("Parece que estás sin conexión conéctate a internet e inténtalo de nuevo"); else alert("Usuario no existe."); return; }
+                await db.collection("usuarios").doc(u.nombreMin).update({administrador:false});
+                const [pub,priv]=await Promise.all([
+                    db.collection("chat").where("nombreMin","==",u.nombreMin).get(),
+                    db.collection("privados").where("deMin","==",u.nombreMin).get()
+                ]);
+                const refs=[]; pub.forEach(d=>refs.push(d.ref)); priv.forEach(d=>refs.push(d.ref));
+                for(let i=0;i<refs.length;i+=450){
+                    const batch=db.batch(); refs.slice(i,i+450).forEach(ref=>batch.update(ref,{administrador:false})); await batch.commit();
+                }
+                if(u.nombreMin===nombreUsuario.toLowerCase()){esAdministrador=false;mostrarNombreUsuario()}
+                cargarUsuariosMenu();
+                return;
+            }
+            if(cmd==="/see"&&parts[1]?.toLowerCase()==="private"&&parts[2]){const u=await verificarUsuario(parts.slice(2).join(" "));if(!u){alert("Usuario no existe.");return}seePrivateTarget=u.nombre;alert("Permiso temporal activado. Abre las tres rayas y toca a ese usuario para ver sus privados.");return}
+            if (cmd === "/color" && parts[1]) {
+                const colores = { red:"red",orange:"orange",yellow:"yellow",green:"green",blue:"blue",purple:"purple",brown:"brown",black:"black",white:"white",rojo:"red",naranja:"orange",amarillo:"yellow",verde:"green",azul:"blue",morado:"purple",purpura:"purple",marron:"brown",marrón:"brown",negro:"black",blanco:"white" };
+                const color = colores[parts[1].toLowerCase()];
+                if (!color) { alert("Color no válido."); return; }
+                colorTextoAdmin = color;
+                alert(`Color del texto cambiado a ${parts[1].toLowerCase()}.`);
+                return;
+            }
+
+            if (cmd === "/clear" && parts[1]?.toLowerCase() === "chat") {
+                if (!confirm("¿Seguro que quieres borrar todos los mensajes públicos y privados permanentemente?")) return;
+                try {
+                    const [publicos, privados] = await Promise.all([
+                        db.collection("chat").get(),
+                        db.collection("privados").get()
+                    ]);
+                    const documentos = [];
+                    const urls = [];
+                    publicos.forEach(doc => { documentos.push(doc.ref); const m=doc.data(); if(m.url) urls.push(m.url); });
+                    privados.forEach(doc => { documentos.push(doc.ref); const m=doc.data(); if(m.url) urls.push(m.url); });
+                    for(let i=0;i<documentos.length;i+=450){
+                        const batch=db.batch();
+                        documentos.slice(i,i+450).forEach(ref=>batch.delete(ref));
+                        await batch.commit();
+                    }
+                    for(const url of [...new Set(urls)]){
+                        try{ await storage.refFromURL(url).delete(); }
+                        catch(e){ console.warn("No se pudo eliminar un archivo de Storage:",e.message); }
+                    }
+                    if(modalPrivados.classList.contains("mostrar")) areaPrivados.innerHTML='<p style="text-align:center;color:var(--texto-suave)">No hay mensajes.</p>';
+                    alert("Todos los mensajes públicos y privados fueron eliminados permanentemente.");
+                }catch(e){
+                    console.error("Error al ejecutar /clear chat:",e);
+                    alert("No se pudieron eliminar todos los mensajes: "+(e.message||e));
+                }
+                return;
+            }
+
+            if (cmd === "/delete" && parts[1]?.toLowerCase() === "all" && parts[2]?.toLowerCase() === "users") {
+                if (!confirm("¿Eliminar TODAS las cuentas de usuarios?")) return;
+                const snapshot=await db.collection("usuarios").get(); const [pub,priv]=await Promise.all([db.collection("chat").get(),db.collection("privados").get()]); const archivos=[]; pub.forEach(d=>{const m=d.data();if(m.url&&m.tipo!=="imagen")archivos.push(m.url)}); priv.forEach(d=>{const m=d.data();if(m.url&&m.tipo!=="imagen")archivos.push(m.url)}); const batch=db.batch();
+                // /delete all users NO crea registros de espera: la espera de 5 minutos
+                // solamente corresponde a una eliminación individual.
+                snapshot.forEach(doc=>{if(doc.id!==nombreUsuario.toLowerCase()) batch.delete(doc.ref);});
+                pub.forEach(d=>batch.delete(d.ref)); priv.forEach(d=>batch.delete(d.ref));
+                await batch.commit(); for(const url of archivos){try{await storage.refFromURL(url).delete()}catch(e){}}
+                alert("Todas las cuentas, mensajes y archivos fueron eliminados.");
+                cargarUsuariosMenu();
+                alert("Todas las demás cuentas, mensajes y archivos fueron eliminados. Tu cuenta permanece activa.");
+                return;
+            }
+
+            if (cmd === "/delete" && parts[1]?.toLowerCase() === "user" && parts[2]) {
+                const nombre = parts.slice(2).join(" "); const nombreMin = nombre.toLowerCase().trim(); const usuario = await verificarUsuario(nombre);
+                if (!usuario) { alert(`El usuario ${nombre} no existe.`); return; }
+                if (nombreMin === nombreUsuario.toLowerCase().trim()) {
+                    alert("No puedes eliminar tu propia cuenta mediante este comando.");
+                    return;
+                }
+                if (!confirm(`¿Eliminar PERMANENTEMENTE la cuenta ${nombre}, sus mensajes y archivos?`)) return;
+                const pub=await db.collection("chat").where("nombreMin","==",nombreMin).get();
+                const [pr1,pr2]=await Promise.all([db.collection("privados").where("deMin","==",nombreMin).get(),db.collection("privados").where("paraMin","==",nombreMin).get()]);
+                const docs=[]; pr1.forEach(d=>docs.push(d)); pr2.forEach(d=>{if(!docs.some(x=>x.id===d.id))docs.push(d)});
+                const archivos=[]; pub.forEach(d=>{const m=d.data();if(m.url&&m.tipo!=="imagen")archivos.push(m.url)}); docs.forEach(d=>{const m=d.data();if(m.url&&m.tipo!=="imagen")archivos.push(m.url)});
+                const batch=db.batch(); pub.forEach(d=>batch.delete(d.ref)); docs.forEach(d=>batch.delete(d.ref)); batch.delete(db.collection("usuarios").doc(nombreMin)); await batch.commit();
+                for(const url of archivos){try{await storage.refFromURL(url).delete()}catch(e){}}
+                await db.collection("cuentasEliminadas").doc(nombreMin).set({nombre,eliminadoEn:firebase.firestore.FieldValue.serverTimestamp()});
+                if(nombreMin===nombreUsuario.toLowerCase()){localStorage.removeItem("chat_nombre");localStorage.removeItem("chat_token");localStorage.removeItem("chat_fotoPerfil");location.reload();return;}
+                cargarUsuariosMenu(); alert(`La cuenta ${nombre} y sus mensajes/archivos fueron eliminados permanentemente.`); return;
+            }
+
+            // /freeze 00:00:30 Nombre
+            // También acepta /freeze Nombre 00:00:30
+            if (cmd === "/freeze") {
+                let duracion = null;
+                let nombre = "";
+                if (parts[1] && /^\d{2}:\d{2}:\d{2}$/.test(parts[1])) {
+                    duracion = parts[1];
+                    nombre = parts.slice(2).join(" ");
+                } else if (parts[1] && /^\d{2}:\d{2}:\d{2}$/.test(parts[parts.length - 1])) {
+                    duracion = parts[parts.length - 1];
+                    nombre = parts.slice(1, -1).join(" ");
+                }
+                if (!duracion || !nombre) {
+                    alert("Uso: /freeze 00:00:30 NombreUsuario");
+                    return;
+                }
+                const partesTiempo = duracion.split(":").map(Number);
+                const horas = partesTiempo[0];
+                const minutos = partesTiempo[1];
+                const segundos = partesTiempo[2];
+                if (minutos > 59 || segundos > 59) {
+                    alert("Tiempo inválido. Los minutos y segundos deben estar entre 00 y 59.");
+                    return;
+                }
+                const duracionMs = ((horas * 60 + minutos) * 60 + segundos) * 1000;
+                if (duracionMs <= 0) {
+                    alert("La duración debe ser mayor que 00:00:00.");
+                    return;
+                }
+                const nombreMin = nombre.toLowerCase().trim();
+                const usuario = await verificarUsuario(nombre);
+                if (!usuario) {
+                    alert(`El usuario ${nombre} no existe.`);
+                    return;
+                }
+                const hasta = new Date(Date.now() + duracionMs).toISOString();
+                await db.collection("usuarios").doc(nombreMin).update({ congeladoHasta: hasta });
+                alert(`Usuario ${nombre} congelado durante ${duracion}.`);
+                return;
+            }
+
+            if (cmd === "/delete" && parts[1]?.toLowerCase() === "private") {
+                if (parts[2]?.toLowerCase() === "all" || 
+                    (parts[2]?.toLowerCase() === "messages" && parts[3]?.toLowerCase() === "for" && parts[4]?.toLowerCase() === "all" && parts[5]?.toLowerCase() === "users")) {
+                    if (!confirm("¿Eliminar todos los mensajes privados?")) return;
+                    const snapshot = await db.collection("privados").get();
+                    const batch = db.batch();
+                    snapshot.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                    if (modalPrivados.classList.contains("mostrar")) cargarMensajesPrivados();
+                    return;
+                }
+                if (parts[2]) {
+                    const nombre = parts.slice(2).join(" ");
+                    const nombreMin = nombre.toLowerCase().trim();
+                    if (!confirm(`¿Eliminar mensajes privados de ${nombre}?`)) return;
+                    const recibidosSnapshot = await db.collection("privados").where("paraMin", "==", nombreMin).get();
+                    const enviadosSnapshot = await db.collection("privados").where("deMin", "==", nombreMin).get();
+                    const batch = db.batch();
+                    recibidosSnapshot.forEach(doc => batch.delete(doc.ref));
+                    enviadosSnapshot.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                    if (modalPrivados.classList.contains("mostrar")) cargarMensajesPrivados();
+                    return;
+                }
+            }
+
+            alert("Comando no reconocido.");
+        }
+
+        function escaparHTML(texto) {
+            return String(texto)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
